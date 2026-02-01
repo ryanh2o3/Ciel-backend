@@ -37,37 +37,6 @@ impl UserService {
         Ok(user)
     }
 
-    pub async fn create_user(
-        &self,
-        handle: String,
-        email: String,
-        display_name: String,
-        bio: Option<String>,
-        avatar_key: Option<String>,
-    ) -> Result<User> {
-        let row = sqlx::query(
-            "INSERT INTO users (handle, email, display_name, bio, avatar_key) \
-             VALUES ($1, $2, $3, $4, $5) \
-             RETURNING id, handle, email, display_name, bio, avatar_key, created_at",
-        )
-        .bind(handle)
-        .bind(email)
-        .bind(display_name)
-        .bind(bio)
-        .bind(avatar_key)
-        .fetch_one(self.db.pool())
-        .await?;
-
-        Ok(User {
-            id: row.get("id"),
-            handle: row.get("handle"),
-            email: row.get("email"),
-            display_name: row.get("display_name"),
-            bio: row.get("bio"),
-            avatar_key: row.get("avatar_key"),
-            created_at: row.get("created_at"),
-        })
-    }
 
     pub async fn update_profile(
         &self,

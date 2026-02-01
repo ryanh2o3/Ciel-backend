@@ -49,18 +49,20 @@ impl FeedService {
         let rows = match cursor {
             Some((created_at, post_id)) => {
                 sqlx::query(
-                    "SELECT id, owner_id, media_id, caption, visibility::text AS visibility, created_at \
-                     FROM posts \
-                     WHERE (owner_id = $1 \
-                        OR (owner_id IN ( \
+                    "SELECT p.id, p.owner_id, u.handle AS owner_handle, u.display_name AS owner_display_name, \
+                            p.media_id, p.caption, p.visibility::text AS visibility, p.created_at \
+                     FROM posts p \
+                     JOIN users u ON p.owner_id = u.id \
+                     WHERE (p.owner_id = $1 \
+                        OR (p.owner_id IN ( \
                             SELECT followee_id FROM follows WHERE follower_id = $1 \
                         ) AND NOT EXISTS ( \
                             SELECT 1 FROM blocks \
-                            WHERE (blocker_id = owner_id AND blocked_id = $1) \
-                               OR (blocker_id = $1 AND blocked_id = owner_id) \
+                            WHERE (blocker_id = p.owner_id AND blocked_id = $1) \
+                               OR (blocker_id = $1 AND blocked_id = p.owner_id) \
                         ))) \
-                       AND (created_at < $2 OR (created_at = $2 AND id < $3)) \
-                     ORDER BY created_at DESC, id DESC \
+                       AND (p.created_at < $2 OR (p.created_at = $2 AND p.id < $3)) \
+                     ORDER BY p.created_at DESC, p.id DESC \
                      LIMIT $4",
                 )
                 .bind(user_id)
@@ -72,17 +74,19 @@ impl FeedService {
             }
             None => {
                 sqlx::query(
-                    "SELECT id, owner_id, media_id, caption, visibility::text AS visibility, created_at \
-                     FROM posts \
-                     WHERE owner_id = $1 \
-                        OR (owner_id IN ( \
+                    "SELECT p.id, p.owner_id, u.handle AS owner_handle, u.display_name AS owner_display_name, \
+                            p.media_id, p.caption, p.visibility::text AS visibility, p.created_at \
+                     FROM posts p \
+                     JOIN users u ON p.owner_id = u.id \
+                     WHERE p.owner_id = $1 \
+                        OR (p.owner_id IN ( \
                             SELECT followee_id FROM follows WHERE follower_id = $1 \
                         ) AND NOT EXISTS ( \
                             SELECT 1 FROM blocks \
-                            WHERE (blocker_id = owner_id AND blocked_id = $1) \
-                               OR (blocker_id = $1 AND blocked_id = owner_id) \
+                            WHERE (blocker_id = p.owner_id AND blocked_id = $1) \
+                               OR (blocker_id = $1 AND blocked_id = p.owner_id) \
                         )) \
-                     ORDER BY created_at DESC, id DESC \
+                     ORDER BY p.created_at DESC, p.id DESC \
                      LIMIT $2",
                 )
                 .bind(user_id)
@@ -102,6 +106,8 @@ impl FeedService {
             posts.push(Post {
                 id: row.get("id"),
                 owner_id: row.get("owner_id"),
+                owner_handle: Some(row.get("owner_handle")),
+                owner_display_name: Some(row.get("owner_display_name")),
                 media_id: row.get("media_id"),
                 caption: row.get("caption"),
                 visibility,

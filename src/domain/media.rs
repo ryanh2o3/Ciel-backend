@@ -12,6 +12,10 @@ pub struct Media {
     pub width: i32,
     pub height: i32,
     pub bytes: i64,
+    #[serde(with = "time::serde::rfc3339")]
     pub created_at: OffsetDateTime,
+    pub thumb_url: Option<String>,
+    pub medium_url: Option<String>,
+    pub original_url: Option<String>,
 }
 

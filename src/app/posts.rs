@@ -23,9 +23,14 @@ impl PostService {
         caption: Option<String>,
     ) -> Result<Post> {
         let row = sqlx::query(
-            "INSERT INTO posts (owner_id, media_id, caption, visibility) \
-             VALUES ($1, $2, $3, $4::post_visibility) \
-             RETURNING id, owner_id, media_id, caption, visibility::text AS visibility, created_at",
+            "WITH inserted_post AS ( \
+                INSERT INTO posts (owner_id, media_id, caption, visibility) \
+                VALUES ($1, $2, $3, $4::post_visibility) \
+                RETURNING id, owner_id, media_id, caption, visibility::text AS visibility, created_at \
+             ) \
+             SELECT p.*, u.handle AS owner_handle, u.display_name AS owner_display_name \
+             FROM inserted_post p \
+             JOIN users u ON p.owner_id = u.id",
         )
         .bind(owner_id)
         .bind(media_id)
@@ -42,6 +47,8 @@ impl PostService {
         Ok(Post {
             id: row.get("id"),
             owner_id: row.get("owner_id"),
+            owner_handle: Some(row.get("owner_handle")),
+            owner_display_name: Some(row.get("owner_display_name")),
             media_id: row.get("media_id"),
             caption: row.get("caption"),
             visibility,
@@ -53,18 +60,20 @@ impl PostService {
         let row = match viewer_id {
             Some(viewer_id) => {
                 sqlx::query(
-                    "SELECT id, owner_id, media_id, caption, visibility::text AS visibility, created_at \
-                     FROM posts \
-                     WHERE id = $1 \
-                       AND (visibility = 'public' \
-                            OR owner_id = $2 \
-                            OR (visibility = 'followers_only' AND EXISTS ( \
-                                SELECT 1 FROM follows WHERE follower_id = $2 AND followee_id = owner_id \
+                    "SELECT p.id, p.owner_id, u.handle AS owner_handle, u.display_name AS owner_display_name, \
+                            p.media_id, p.caption, p.visibility::text AS visibility, p.created_at \
+                     FROM posts p \
+                     JOIN users u ON p.owner_id = u.id \
+                     WHERE p.id = $1 \
+                       AND (p.visibility = 'public' \
+                            OR p.owner_id = $2 \
+                            OR (p.visibility = 'followers_only' AND EXISTS ( \
+                                SELECT 1 FROM follows WHERE follower_id = $2 AND followee_id = p.owner_id \
                             ))) \
                        AND NOT EXISTS ( \
                            SELECT 1 FROM blocks \
-                           WHERE (blocker_id = owner_id AND blocked_id = $2) \
-                              OR (blocker_id = $2 AND blocked_id = owner_id) \
+                           WHERE (blocker_id = p.owner_id AND blocked_id = $2) \
+                              OR (blocker_id = $2 AND blocked_id = p.owner_id) \
                        )",
                 )
                 .bind(post_id)
@@ -74,9 +83,11 @@ impl PostService {
             }
             None => {
                 sqlx::query(
-                    "SELECT id, owner_id, media_id, caption, visibility::text AS visibility, created_at \
-                     FROM posts \
-                     WHERE id = $1 AND visibility = 'public'",
+                    "SELECT p.id, p.owner_id, u.handle AS owner_handle, u.display_name AS owner_display_name, \
+                            p.media_id, p.caption, p.visibility::text AS visibility, p.created_at \
+                     FROM posts p \
+                     JOIN users u ON p.owner_id = u.id \
+                     WHERE p.id = $1 AND p.visibility = 'public'",
                 )
                 .bind(post_id)
                 .fetch_optional(self.db.pool())
@@ -92,6 +103,8 @@ impl PostService {
                 Some(Post {
                     id: row.get("id"),
                     owner_id: row.get("owner_id"),
+                    owner_handle: Some(row.get("owner_handle")),
+                    owner_display_name: Some(row.get("owner_display_name")),
                     media_id: row.get("media_id"),
                     caption: row.get("caption"),
                     visibility,
@@ -111,10 +124,15 @@ impl PostService {
         caption: Option<String>,
     ) -> Result<Option<Post>> {
         let row = sqlx::query(
-            "UPDATE posts \
-             SET caption = $3 \
-             WHERE id = $1 AND owner_id = $2 \
-             RETURNING id, owner_id, media_id, caption, visibility::text AS visibility, created_at",
+            "WITH updated_post AS ( \
+                UPDATE posts \
+                SET caption = $3 \
+                WHERE id = $1 AND owner_id = $2 \
+                RETURNING id, owner_id, media_id, caption, visibility::text AS visibility, created_at \
+             ) \
+             SELECT p.*, u.handle AS owner_handle, u.display_name AS owner_display_name \
+             FROM updated_post p \
+             JOIN users u ON p.owner_id = u.id",
         )
         .bind(post_id)
         .bind(owner_id)
@@ -130,6 +148,8 @@ impl PostService {
                 Some(Post {
                     id: row.get("id"),
                     owner_id: row.get("owner_id"),
+                    owner_handle: Some(row.get("owner_handle")),
+                    owner_display_name: Some(row.get("owner_display_name")),
                     media_id: row.get("media_id"),
                     caption: row.get("caption"),
                     visibility,
@@ -163,21 +183,23 @@ impl PostService {
             Some(viewer_id) => match cursor {
                 Some((created_at, post_id)) => {
                     sqlx::query(
-                        "SELECT id, owner_id, media_id, caption, visibility::text AS visibility, created_at \
-                         FROM posts \
-                         WHERE owner_id = $1 \
-                           AND (visibility = 'public' \
-                                OR owner_id = $2 \
-                                OR (visibility = 'followers_only' AND EXISTS ( \
-                                    SELECT 1 FROM follows WHERE follower_id = $2 AND followee_id = owner_id \
+                        "SELECT p.id, p.owner_id, u.handle AS owner_handle, u.display_name AS owner_display_name, \
+                                p.media_id, p.caption, p.visibility::text AS visibility, p.created_at \
+                         FROM posts p \
+                         JOIN users u ON p.owner_id = u.id \
+                         WHERE p.owner_id = $1 \
+                           AND (p.visibility = 'public' \
+                                OR p.owner_id = $2 \
+                                OR (p.visibility = 'followers_only' AND EXISTS ( \
+                                    SELECT 1 FROM follows WHERE follower_id = $2 AND followee_id = p.owner_id \
                                 ))) \
                            AND NOT EXISTS ( \
                                SELECT 1 FROM blocks \
-                               WHERE (blocker_id = owner_id AND blocked_id = $2) \
-                                  OR (blocker_id = $2 AND blocked_id = owner_id) \
+                               WHERE (blocker_id = p.owner_id AND blocked_id = $2) \
+                                  OR (blocker_id = $2 AND blocked_id = p.owner_id) \
                            ) \
-                           AND (created_at < $3 OR (created_at = $3 AND id < $4)) \
-                         ORDER BY created_at DESC, id DESC \
+                           AND (p.created_at < $3 OR (p.created_at = $3 AND p.id < $4)) \
+                         ORDER BY p.created_at DESC, p.id DESC \
                          LIMIT $5",
                     )
                     .bind(owner_id)
@@ -190,20 +212,22 @@ impl PostService {
                 }
                 None => {
                     sqlx::query(
-                    "SELECT id, owner_id, media_id, caption, visibility::text AS visibility, created_at \
-                     FROM posts \
-                     WHERE owner_id = $1 \
-                       AND (visibility = 'public' \
-                            OR owner_id = $2 \
-                            OR (visibility = 'followers_only' AND EXISTS ( \
-                                SELECT 1 FROM follows WHERE follower_id = $2 AND followee_id = owner_id \
+                    "SELECT p.id, p.owner_id, u.handle AS owner_handle, u.display_name AS owner_display_name, \
+                            p.media_id, p.caption, p.visibility::text AS visibility, p.created_at \
+                     FROM posts p \
+                     JOIN users u ON p.owner_id = u.id \
+                     WHERE p.owner_id = $1 \
+                       AND (p.visibility = 'public' \
+                            OR p.owner_id = $2 \
+                            OR (p.visibility = 'followers_only' AND EXISTS ( \
+                                SELECT 1 FROM follows WHERE follower_id = $2 AND followee_id = p.owner_id \
                             ))) \
                        AND NOT EXISTS ( \
                            SELECT 1 FROM blocks \
-                           WHERE (blocker_id = owner_id AND blocked_id = $2) \
-                              OR (blocker_id = $2 AND blocked_id = owner_id) \
+                           WHERE (blocker_id = p.owner_id AND blocked_id = $2) \
+                              OR (blocker_id = $2 AND blocked_id = p.owner_id) \
                        ) \
-                     ORDER BY created_at DESC, id DESC \
+                     ORDER BY p.created_at DESC, p.id DESC \
                      LIMIT $3",
                     )
                     .bind(owner_id)
@@ -216,12 +240,14 @@ impl PostService {
             None => match cursor {
                 Some((created_at, post_id)) => {
                     sqlx::query(
-                        "SELECT id, owner_id, media_id, caption, visibility::text AS visibility, created_at \
-                         FROM posts \
-                         WHERE owner_id = $1 \
-                           AND visibility = 'public' \
-                           AND (created_at < $2 OR (created_at = $2 AND id < $3)) \
-                         ORDER BY created_at DESC, id DESC \
+                        "SELECT p.id, p.owner_id, u.handle AS owner_handle, u.display_name AS owner_display_name, \
+                                p.media_id, p.caption, p.visibility::text AS visibility, p.created_at \
+                         FROM posts p \
+                         JOIN users u ON p.owner_id = u.id \
+                         WHERE p.owner_id = $1 \
+                           AND p.visibility = 'public' \
+                           AND (p.created_at < $2 OR (p.created_at = $2 AND p.id < $3)) \
+                         ORDER BY p.created_at DESC, p.id DESC \
                          LIMIT $4",
                     )
                     .bind(owner_id)
@@ -233,10 +259,12 @@ impl PostService {
                 }
                 None => {
                     sqlx::query(
-                        "SELECT id, owner_id, media_id, caption, visibility::text AS visibility, created_at \
-                         FROM posts \
-                         WHERE owner_id = $1 AND visibility = 'public' \
-                         ORDER BY created_at DESC, id DESC \
+                        "SELECT p.id, p.owner_id, u.handle AS owner_handle, u.display_name AS owner_display_name, \
+                                p.media_id, p.caption, p.visibility::text AS visibility, p.created_at \
+                         FROM posts p \
+                         JOIN users u ON p.owner_id = u.id \
+                         WHERE p.owner_id = $1 AND p.visibility = 'public' \
+                         ORDER BY p.created_at DESC, p.id DESC \
                          LIMIT $2",
                     )
                     .bind(owner_id)
@@ -255,6 +283,8 @@ impl PostService {
             posts.push(Post {
                 id: row.get("id"),
                 owner_id: row.get("owner_id"),
+                owner_handle: Some(row.get("owner_handle")),
+                owner_display_name: Some(row.get("owner_display_name")),
                 media_id: row.get("media_id"),
                 caption: row.get("caption"),
                 visibility,

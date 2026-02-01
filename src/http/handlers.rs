@@ -75,7 +75,7 @@ pub(crate) async fn health(State(state): State<AppState>) -> Json<HealthResponse
 }
 
 pub async fn metrics() -> Result<StatusCode, AppError> {
-    Ok(StatusCode::NOT_IMPLEMENTED)
+    Err(AppError::not_implemented("metrics not yet available"))
 }
 
 #[derive(Deserialize)]
@@ -88,7 +88,9 @@ pub struct LoginRequest {
 pub struct AuthTokenResponse {
     pub access_token: String,
     pub refresh_token: String,
+    #[serde(with = "time::serde::rfc3339")]
     pub access_expires_at: OffsetDateTime,
+    #[serde(with = "time::serde::rfc3339")]
     pub refresh_expires_at: OffsetDateTime,
 }
 
@@ -286,6 +288,21 @@ pub async fn create_user(
         )
         .await
         .map_err(|err| {
+            if let Some(sqlx_err) = err.downcast_ref::<sqlx::Error>() {
+                if let Some(db_err) = sqlx_err.as_database_error() {
+                    if let Some(code) = db_err.code() {
+                        if code == "23505" {
+                            let constraint = db_err.constraint().unwrap_or_default();
+                            if constraint.contains("users_handle_key") {
+                                return AppError::conflict("Handle already taken");
+                            }
+                            if constraint.contains("users_email_key") {
+                                return AppError::conflict("Email already taken");
+                            }
+                        }
+                    }
+                }
+            }
             tracing::error!(error = ?err, "failed to create user");
             AppError::bad_request("failed to create user")
         })?;
@@ -461,6 +478,7 @@ pub struct UnblockResponse {
 #[derive(Serialize)]
 pub struct SocialUserItem {
     pub user: crate::domain::user::User,
+    #[serde(with = "time::serde::rfc3339")]
     pub followed_at: OffsetDateTime,
 }
 
@@ -895,6 +913,7 @@ pub async fn create_upload(
         state.db.clone(),
         state.storage.clone(),
         state.queue.clone(),
+        state.s3_public_endpoint.clone(),
     );
 
     let intent = service
@@ -922,6 +941,7 @@ pub async fn complete_upload(
         state.db.clone(),
         state.storage.clone(),
         state.queue.clone(),
+        state.s3_public_endpoint.clone(),
     );
 
     let queued = service
@@ -943,7 +963,7 @@ pub async fn get_media(
     Path(id): Path<Uuid>,
     State(state): State<AppState>,
 ) -> Result<Json<crate::domain::media::Media>, AppError> {
-    let service = MediaService::new(state.db.clone(), state.storage.clone(), state.queue.clone());
+    let service = MediaService::new(state.db.clone(), state.storage.clone(), state.queue.clone(), state.s3_public_endpoint.clone());
     let media = service.get_media(id).await.map_err(|err| {
         tracing::error!(error = ?err, media_id = %id, "failed to fetch media");
         AppError::internal("failed to fetch media")
@@ -960,7 +980,7 @@ pub async fn get_upload_status(
     Path(id): Path<Uuid>,
     State(state): State<AppState>,
 ) -> Result<Json<UploadStatus>, AppError> {
-    let service = MediaService::new(state.db.clone(), state.storage.clone(), state.queue.clone());
+    let service = MediaService::new(state.db.clone(), state.storage.clone(), state.queue.clone(), state.s3_public_endpoint.clone());
     let status = service
         .get_upload_status(id, auth.user_id)
         .await
@@ -980,7 +1000,7 @@ pub async fn delete_media(
     Path(id): Path<Uuid>,
     State(state): State<AppState>,
 ) -> Result<StatusCode, AppError> {
-    let service = MediaService::new(state.db.clone(), state.storage.clone(), state.queue.clone());
+    let service = MediaService::new(state.db.clone(), state.storage.clone(), state.queue.clone(), state.s3_public_endpoint.clone());
     let deleted = service
         .delete_media(id, auth.user_id)
         .await

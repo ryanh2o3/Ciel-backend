@@ -9,6 +9,8 @@ pub struct Notification {
     pub user_id: Uuid,
     pub notification_type: String,
     pub payload: Value,
+    #[serde(with = "time::serde::rfc3339::option")]
     pub read_at: Option<OffsetDateTime>,
+    #[serde(with = "time::serde::rfc3339")]
     pub created_at: OffsetDateTime,
 }

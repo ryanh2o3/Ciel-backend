@@ -22,7 +22,8 @@ impl ObjectStorage {
 
         let mut s3_builder = aws_sdk_s3::config::Builder::from(&shared_config)
             .region(shared_config.region().cloned())
-            .endpoint_url(config.s3_endpoint.clone());
+            .endpoint_url(config.s3_endpoint.clone())
+            .force_path_style(true);
         if let Some(provider) = shared_config.credentials_provider() {
             s3_builder = s3_builder.credentials_provider(provider);
         }

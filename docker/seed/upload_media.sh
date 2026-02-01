@@ -22,8 +22,14 @@ docker compose exec -T localstack sh -c \
 docker compose exec -T localstack sh -c \
   "find /seed-images -type f 2>/dev/null | while read -r f; do
      rel=\${f#/seed-images/}
+     base=\${rel%.jpg}
      key=\"seed/\$rel\"
+     thumb_key=\"seed/\${base}_thumb.jpg\"
+     medium_key=\"seed/\${base}_medium.jpg\"
+
      awslocal s3 cp \"\$f\" \"s3://picshare-media/\$key\"
+     awslocal s3 cp \"\$f\" \"s3://picshare-media/\$thumb_key\"
+     awslocal s3 cp \"\$f\" \"s3://picshare-media/\$medium_key\"
    done"
 
 echo "Uploaded seed images to s3://picshare-media/seed/"

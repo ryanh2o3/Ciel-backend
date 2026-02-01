@@ -82,12 +82,14 @@ impl SearchService {
         let rows = match cursor {
             Some((created_at, post_id)) => {
                 sqlx::query(
-                    "SELECT id, owner_id, media_id, caption, visibility::text AS visibility, created_at \
-                     FROM posts \
-                     WHERE visibility = 'public' \
-                       AND caption ILIKE $1 \
-                       AND (created_at < $2 OR (created_at = $2 AND id < $3)) \
-                     ORDER BY created_at DESC, id DESC \
+                    "SELECT p.id, p.owner_id, u.handle AS owner_handle, u.display_name AS owner_display_name, \
+                            p.media_id, p.caption, p.visibility::text AS visibility, p.created_at \
+                     FROM posts p \
+                     JOIN users u ON p.owner_id = u.id \
+                     WHERE p.visibility = 'public' \
+                       AND p.caption ILIKE $1 \
+                       AND (p.created_at < $2 OR (p.created_at = $2 AND p.id < $3)) \
+                     ORDER BY p.created_at DESC, p.id DESC \
                      LIMIT $4",
                 )
                 .bind(&pattern)
@@ -99,10 +101,12 @@ impl SearchService {
             }
             None => {
                 sqlx::query(
-                    "SELECT id, owner_id, media_id, caption, visibility::text AS visibility, created_at \
-                     FROM posts \
-                     WHERE visibility = 'public' AND caption ILIKE $1 \
-                     ORDER BY created_at DESC, id DESC \
+                    "SELECT p.id, p.owner_id, u.handle AS owner_handle, u.display_name AS owner_display_name, \
+                            p.media_id, p.caption, p.visibility::text AS visibility, p.created_at \
+                     FROM posts p \
+                     JOIN users u ON p.owner_id = u.id \
+                     WHERE p.visibility = 'public' AND p.caption ILIKE $1 \
+                     ORDER BY p.created_at DESC, p.id DESC \
                      LIMIT $2",
                 )
                 .bind(&pattern)
@@ -120,6 +124,8 @@ impl SearchService {
             posts.push(Post {
                 id: row.get("id"),
                 owner_id: row.get("owner_id"),
+                owner_handle: Some(row.get("owner_handle")),
+                owner_display_name: Some(row.get("owner_display_name")),
                 media_id: row.get("media_id"),
                 caption: row.get("caption"),
                 visibility,

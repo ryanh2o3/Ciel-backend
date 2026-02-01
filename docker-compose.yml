@@ -29,12 +29,12 @@ services:
       SERVICES: s3,sqs
       AWS_DEFAULT_REGION: us-east-1
       DEBUG: "0"
-    command: ["sh", "-c", "chmod +x /etc/localstack/init/ready.d/01-setup.sh && localstack start"]
     ports:
       - "4566:4566"
     volumes:
       - "./docker/localstack/init:/etc/localstack/init/ready.d"
       - "./docker/seed/images:/seed-images"
+      - "localstack_data:/var/lib/localstack"
     healthcheck:
       test: ["CMD", "curl", "-s", "http://localhost:4566/_localstack/health"]
       interval: 5s
@@ -66,12 +66,15 @@ services:
       migrate:
         condition: service_completed_successfully
     environment:
+      RUST_LOG: debug,tower_http=debug,picshare::app::media=debug
+      APP_MODE: api
       HTTP_ADDR: 0.0.0.0:8080
       DATABASE_URL: postgres://picshare:picshare@db:5432/picshare
       REDIS_URL: redis://redis:6379/
       S3_ENDPOINT: http://localstack:4566
       S3_REGION: us-east-1
       S3_BUCKET: picshare-media
+      S3_PUBLIC_ENDPOINT: 192.168.1.66:4566
       QUEUE_ENDPOINT: http://localstack:4566
       QUEUE_REGION: us-east-1
       QUEUE_NAME: picshare-media-jobs
@@ -88,3 +91,41 @@ services:
       AWS_DEFAULT_REGION: us-east-1
     ports:
       - "8080:8080"
+
+  worker:
+    build: .
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      localstack:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      RUST_LOG: info
+      APP_MODE: worker
+      DATABASE_URL: postgres://picshare:picshare@db:5432/picshare
+      REDIS_URL: redis://redis:6379/
+      S3_ENDPOINT: http://localstack:4566
+      S3_REGION: us-east-1
+      S3_BUCKET: picshare-media
+      S3_PUBLIC_ENDPOINT: 192.168.1.66:4566
+      QUEUE_ENDPOINT: http://localstack:4566
+      QUEUE_REGION: us-east-1
+      QUEUE_NAME: picshare-media-jobs
+      AUTH_TOKEN_TTL_HOURS: 168
+      ACCESS_TTL_MINUTES: 15
+      REFRESH_TTL_DAYS: 30
+      UPLOAD_URL_TTL_SECONDS: 900
+      UPLOAD_MAX_BYTES: 10485760
+      ADMIN_TOKEN: ${ADMIN_TOKEN:-}
+      PASETO_ACCESS_KEY: ${PASETO_ACCESS_KEY:-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=}
+      PASETO_REFRESH_KEY: ${PASETO_REFRESH_KEY:-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=}
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      AWS_DEFAULT_REGION: us-east-1
+
+volumes:
+  localstack_data:

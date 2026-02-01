@@ -10,6 +10,7 @@ pub struct User {
     pub display_name: String,
     pub bio: Option<String>,
     pub avatar_key: Option<String>,
+    #[serde(with = "time::serde::rfc3339")]
     pub created_at: OffsetDateTime,
 }
 

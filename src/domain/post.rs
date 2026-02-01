@@ -6,8 +6,11 @@ use uuid::Uuid;
 pub struct Post {
     pub id: Uuid,
     pub owner_id: Uuid,
+    pub owner_handle: Option<String>,
+    pub owner_display_name: Option<String>,
     pub media_id: Uuid,
     pub caption: Option<String>,
+    #[serde(with = "time::serde::rfc3339")]
     pub created_at: OffsetDateTime,
     pub visibility: PostVisibility,
 }

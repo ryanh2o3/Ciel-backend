@@ -87,12 +87,12 @@ impl AuthService {
         })
     }
 
-    pub async fn login(&self, email: &str, password: &str) -> Result<Option<TokenPair>> {
+    pub async fn login(&self, identifier: &str, password: &str) -> Result<Option<TokenPair>> {
         let row = sqlx::query(
             "SELECT id, password_hash \
-             FROM users WHERE email = $1",
+             FROM users WHERE email = $1 OR handle = $1",
         )
-        .bind(email)
+        .bind(identifier)
         .fetch_optional(self.db.pool())
         .await?;
 
@@ -227,7 +227,7 @@ impl AuthService {
             Ok(token) => token,
             Err(_) => return Ok(None),
         };
-        Ok(trusted.payload_claims())
+        Ok(trusted.payload_claims().cloned())
     }
 
     fn build_access_claims(&self, user_id: Uuid) -> Result<(Claims, OffsetDateTime)> {

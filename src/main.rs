@@ -27,6 +27,7 @@ pub struct AppState {
     pub paseto_refresh_key: [u8; 32],
     pub access_ttl_minutes: u64,
     pub refresh_ttl_days: u64,
+    pub s3_public_endpoint: Option<String>,
 }
 
 #[tokio::main]
@@ -56,6 +57,7 @@ async fn main() -> anyhow::Result<()> {
         paseto_refresh_key: config.paseto_refresh_key,
         access_ttl_minutes: config.access_ttl_minutes,
         refresh_ttl_days: config.refresh_ttl_days,
+        s3_public_endpoint: config.s3_public_endpoint,
     };
 
     match config.app_mode.as_str() {

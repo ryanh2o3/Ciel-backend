@@ -9,6 +9,7 @@ pub struct ModerationAction {
     pub target_type: String,
     pub target_id: Uuid,
     pub reason: Option<String>,
+    #[serde(with = "time::serde::rfc3339")]
     pub created_at: OffsetDateTime,
 }
 
@@ -18,5 +19,6 @@ pub struct UserFlag {
     pub reporter_id: Uuid,
     pub target_id: Uuid,
     pub reason: Option<String>,
+    #[serde(with = "time::serde::rfc3339")]
     pub created_at: OffsetDateTime,
 }

@@ -14,6 +14,7 @@ pub struct MediaService {
     db: Db,
     storage: ObjectStorage,
     queue: QueueClient,
+    s3_public_endpoint: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -38,8 +39,8 @@ pub struct UploadStatus {
 }
 
 impl MediaService {
-    pub fn new(db: Db, storage: ObjectStorage, queue: QueueClient) -> Self {
-        Self { db, storage, queue }
+    pub fn new(db: Db, storage: ObjectStorage, queue: QueueClient, s3_public_endpoint: Option<String>) -> Self {
+        Self { db, storage, queue, s3_public_endpoint }
     }
 
     pub async fn create_upload(
@@ -85,10 +86,19 @@ impl MediaService {
             })
             .collect();
 
+        let mut upload_url = presigned.uri().to_string();
+        tracing::debug!("Original presigned URL: {}", upload_url);
+
+        // Replace internal endpoint (localstack:4566) with public endpoint (localhost:4566)
+        if let Some(ref public_endpoint) = self.s3_public_endpoint {
+            upload_url = upload_url.replace("localstack:4566", public_endpoint);
+            tracing::debug!("Converted presigned URL: {}", upload_url);
+        }
+
         Ok(UploadIntent {
             upload_id,
             object_key,
-            upload_url: presigned.uri().to_string(),
+            upload_url,
             expires_in_seconds,
             headers,
         })
@@ -111,13 +121,7 @@ impl MediaService {
             None => return Ok(false),
         };
 
-        let job = MediaJob {
-            upload_id,
-            owner_id,
-            original_key,
-        };
-
-        self.queue.enqueue_media_job(&job).await?;
+        self.enqueue_processing(upload_id, owner_id, original_key).await?;
         Ok(true)
     }
 
@@ -146,17 +150,55 @@ impl MediaService {
         .fetch_optional(self.db.pool())
         .await?;
 
-        let media = row.map(|row| Media {
-            id: row.get("id"),
-            owner_id: row.get("owner_id"),
-            original_key: row.get("original_key"),
-            thumb_key: row.get("thumb_key"),
-            medium_key: row.get("medium_key"),
-            width: row.get("width"),
-            height: row.get("height"),
-            bytes: row.get("bytes"),
-            created_at: row.get("created_at"),
-        });
+        let media = match row {
+            Some(row) => {
+                let original_key: String = row.get("original_key");
+                let thumb_key: String = row.get("thumb_key");
+                let medium_key: String = row.get("medium_key");
+
+                let mut media = Media {
+                    id: row.get("id"),
+                    owner_id: row.get("owner_id"),
+                    original_key: original_key.clone(),
+                    thumb_key: thumb_key.clone(),
+                    medium_key: medium_key.clone(),
+                    width: row.get("width"),
+                    height: row.get("height"),
+                    bytes: row.get("bytes"),
+                    created_at: row.get("created_at"),
+                    thumb_url: None,
+                    medium_url: None,
+                    original_url: None,
+                };
+
+                // Generate presigned URLs
+                let presign_config = PresigningConfig::expires_in(Duration::from_secs(3600))?;
+                
+                let keys = [
+                    (&original_key, &mut media.original_url),
+                    (&thumb_key, &mut media.thumb_url),
+                    (&medium_key, &mut media.medium_url),
+                ];
+
+                for (key, url_field) in keys {
+                    let presigned = self.storage.client()
+                        .get_object()
+                        .bucket(self.storage.bucket())
+                        .key(key.clone())
+                        .presigned(presign_config.clone())
+                        .await?;
+                    
+                    let mut url = presigned.uri().to_string();
+                    if let Some(ref public_endpoint) = self.s3_public_endpoint {
+                        url = url.replace("localstack:4566", public_endpoint);
+                    }
+                    *url_field = Some(url);
+                }
+
+                Some(media)
+            },
+            None => None,
+        };
 
         Ok(media)
     }
