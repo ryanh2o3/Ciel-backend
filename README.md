@@ -1,4 +1,4 @@
-# PicShare
+# PicShare (Work in progress - under active development)
 
 PicShare is a photo‑only social media app focused on simple sharing and a clean feed. It is designed to run centrally in Europe with a focus on efficiency, low operating costs, and predictable scaling.
 
