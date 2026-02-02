@@ -1,6 +1,6 @@
-# Luminé (Work in progress - under active development)
+# Ciel (Work in progress - under active development)
 
-Luminé is a photo‑only social media app focused on simple sharing and a clean feed. It is designed to run centrally in Europe with a focus on efficiency, low operating costs, and predictable scaling.
+Ciel is a photo‑only social media app focused on simple sharing and a clean feed. It is designed to run centrally in Europe with a focus on efficiency, low operating costs, and predictable scaling.
 
 **License**: AGPL-3.0 - See [LICENSE](LICENSE) file for details.
 
@@ -25,7 +25,7 @@ This has not been deployed to cloud services yet. Still working on the ios and a
 
 ## Scale-ready architecture
 
-Luminé is designed to be cost-effective at launch while keeping the same core architecture as it scales to millions of users. The system stays a modular monolith for simplicity, but with clear async boundaries so each worker can scale independently without a rearchitecture.
+Ciel is designed to be cost-effective at launch while keeping the same core architecture as it scales to millions of users. The system stays a modular monolith for simplicity, but with clear async boundaries so each worker can scale independently without a rearchitecture.
 
 **Key principles**
 
@@ -147,7 +147,7 @@ This brings up:
 There is no public "create user" endpoint yet. Insert a user directly:
 
 ```bash
-docker compose exec db psql -U lumine -d lumine -c \
+docker compose exec db psql -U ciel -d ciel -c \
 "INSERT INTO users (id, handle, email, display_name) \
  VALUES ('00000000-0000-0000-0000-000000000001', 'demo', 'demo@example.com', 'Demo User') \
  ON CONFLICT DO NOTHING;"
@@ -172,7 +172,7 @@ This inserts a small social graph plus media/post/like/comment records with plac
   ```bash
   bash docker/seed/upload_media.sh
   ```
-  Files are uploaded to `s3://lumine-media/seed/`
+  Files are uploaded to `s3://ciel-media/seed/`
 
 ### Postman (Docker API)
 

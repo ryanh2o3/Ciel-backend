@@ -1,6 +1,6 @@
 INSERT INTO users (id, handle, email, display_name, bio, password_hash)
 VALUES
-    ('00000000-0000-0000-0000-000000000001', 'demo', 'demo@example.com', 'Demo User', 'Hello from Luminé.', '$argon2id$v=19$m=19456,t=2,p=1$c29tZXNhbHQ$RdescudvJC1OeqEcglpmXw'),
+    ('00000000-0000-0000-0000-000000000001', 'demo', 'demo@example.com', 'Demo User', 'Hello from Ciel.', '$argon2id$v=19$m=19456,t=2,p=1$c29tZXNhbHQ$RdescudvJC1OeqEcglpmXw'),
     ('00000000-0000-0000-0000-000000000002', 'alice', 'alice@example.com', 'Alice', 'Coffee, photos, and travel.', '$argon2id$v=19$m=19456,t=2,p=1$c29tZXNhbHQ$RdescudvJC1OeqEcglpmXw'),
     ('00000000-0000-0000-0000-000000000003', 'bob', 'bob@example.com', 'Bob', 'Street photography enthusiast.', '$argon2id$v=19$m=19456,t=2,p=1$c29tZXNhbHQ$RdescudvJC1OeqEcglpmXw'),
     ('00000000-0000-0000-0000-000000000004', 'cora', 'cora@example.com', 'Cora', 'Food, friends, and sunsets.', '$argon2id$v=19$m=19456,t=2,p=1$c29tZXNhbHQ$RdescudvJC1OeqEcglpmXw')

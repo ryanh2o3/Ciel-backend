@@ -1,5 +1,5 @@
 #!/bin/bash
 set -euo pipefail
 
-awslocal s3 mb s3://lumine-media || true
-awslocal sqs create-queue --queue-name lumine-media-jobs || true
+awslocal s3 mb s3://ciel-media || true
+awslocal sqs create-queue --queue-name ciel-media-jobs || true

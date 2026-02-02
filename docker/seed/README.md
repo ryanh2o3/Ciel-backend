@@ -1,6 +1,6 @@
 # Seed Data
 
-This directory contains scripts and data to seed the Luminé development environment.
+This directory contains scripts and data to seed the Ciel development environment.
 
 ## What gets seeded
 
@@ -15,7 +15,7 @@ This directory contains scripts and data to seed the Luminé development environ
 
 ## Running the seed script
 
-From the Luminé root directory:
+From the Ciel root directory:
 
 ```bash
 bash docker/seed/seed.sh

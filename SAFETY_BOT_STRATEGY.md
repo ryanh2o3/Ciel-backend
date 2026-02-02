@@ -1,4 +1,4 @@
-# Luminé: Anti-Bot, Referral, and Sharing Strategy
+# Ciel: Anti-Bot, Referral, and Sharing Strategy
 
 **Goals:**
 
