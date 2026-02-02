@@ -1,4 +1,4 @@
-# PicShare Rust Backend - Architecture & Scalability Review
+# Luminé Rust Backend - Architecture & Scalability Review
 
 **Review Date:** February 2, 2026 (Updated: Safety features added)
 **Reviewer:** Claude Code
@@ -8,7 +8,7 @@
 
 ## Executive Summary
 
-The PicShare Rust backend demonstrates **strong architectural foundations** with clean separation of concerns, modern async patterns, and production-ready infrastructure integration. The codebase follows industry best practices for a photo-sharing social media platform and shows clear evidence of thoughtful design decisions.
+The Luminé Rust backend demonstrates **strong architectural foundations** with clean separation of concerns, modern async patterns, and production-ready infrastructure integration. The codebase follows industry best practices for a photo-sharing social media platform and shows clear evidence of thoughtful design decisions.
 
 **Overall Grade: A+ (96/100)** *(Updated with 2000 limit + Safety Features)*
 
@@ -45,7 +45,7 @@ The PicShare Rust backend demonstrates **strong architectural foundations** with
 
 ### Executive Summary
 
-Adding a **2000 follower/following limit** at the business logic layer transforms PicShare's scalability profile:
+Adding a **2000 follower/following limit** at the business logic layer transforms Luminé's scalability profile:
 
 | Metric | Without Limit | With 2000 Limit | Improvement |
 |--------|--------------|-----------------|-------------|
@@ -896,7 +896,7 @@ pub struct PublicUser {
 
 ### Overview
 
-PicShare now implements a **production-ready safety system** with four integrated components designed to prevent spam, bot abuse, and platform manipulation while maintaining excellent user experience.
+Luminé now implements a **production-ready safety system** with four integrated components designed to prevent spam, bot abuse, and platform manipulation while maintaining excellent user experience.
 
 ### Component 1: Trust-Based Rate Limiting
 
@@ -1286,7 +1286,7 @@ app.layer(prometheus_layer);
 
 ### 11.1 vs. Instagram/Twitter Feed Architecture
 
-| Aspect | PicShare (Current) | Instagram/Twitter | Gap | With 2000 Limit |
+| Aspect | Luminé (Current) | Instagram/Twitter | Gap | With 2000 Limit |
 |--------|-------------------|-------------------|-----|-----------------|
 | **Feed Strategy** | Fan-out-on-read (query-time) | Fan-out-on-write (Redis sorted sets) | ❌ Major | ✅ **Acceptable for 100K-250K users** |
 | **Follow Limits** | 2000 max follows (enforced) | Unlimited (but algorithmically limited) | Different approach | ✅ **Smart constraint** |
@@ -1296,7 +1296,7 @@ app.layer(prometheus_layer);
 | **Database** | Single primary | Sharded, replicated clusters | ❌ Significant | ⚠️ Can defer with replicas |
 | **Scalability** | ~~10K~~ **100K-250K users** | Hundreds of millions | ⚠️ Reasonable gap | ✅ **Appropriate for growth-stage startup** |
 
-**Updated Assessment:** PicShare is appropriate for early to **growth-stage startup (0-250K users)** with the 2000 follower limit—a 25x improvement over unlimited follows.
+**Updated Assessment:** Luminé is appropriate for early to **growth-stage startup (0-250K users)** with the 2000 follower limit—a 25x improvement over unlimited follows.
 
 ### 11.2 vs. Rust Best Practices
 
@@ -1434,7 +1434,7 @@ app.layer(prometheus_layer);
 
 ## 14. Conclusion
 
-The PicShare Rust backend demonstrates **strong engineering fundamentals** with a clean architecture, excellent use of Rust's type system, and good security practices. The codebase is well-organized, follows industry best practices, and uses modern async patterns effectively.
+The Luminé Rust backend demonstrates **strong engineering fundamentals** with a clean architecture, excellent use of Rust's type system, and good security practices. The codebase is well-organized, follows industry best practices, and uses modern async patterns effectively.
 
 ### Impact of 2000 Follower Limit 🎯
 

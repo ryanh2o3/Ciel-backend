@@ -1,4 +1,4 @@
-# PicShare: Anti-Bot, Referral, and Sharing Strategy
+# Luminé: Anti-Bot, Referral, and Sharing Strategy
 
 **Goals:**
 

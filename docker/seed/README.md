@@ -1,6 +1,6 @@
 # Seed Data
 
-This directory contains scripts and data to seed the PicShare development environment.
+This directory contains scripts and data to seed the Luminé development environment.
 
 ## What gets seeded
 
@@ -15,7 +15,7 @@ This directory contains scripts and data to seed the PicShare development enviro
 
 ## Running the seed script
 
-From the PicShare root directory:
+From the Luminé root directory:
 
 ```bash
 bash docker/seed/seed.sh

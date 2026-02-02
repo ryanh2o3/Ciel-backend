@@ -216,8 +216,8 @@ impl AuthService {
     fn decrypt_claims(&self, token: &str, key_bytes: [u8; 32]) -> Result<Option<Claims>> {
         let key = SymmetricKey::<V4>::from(&key_bytes)?;
         let mut rules = ClaimsValidationRules::new();
-        rules.validate_issuer_with("picshare");
-        rules.validate_audience_with("picshare");
+        rules.validate_issuer_with("lumine");
+        rules.validate_audience_with("lumine");
 
         let untrusted = match UntrustedToken::<Local, V4>::try_from(token) {
             Ok(token) => token,
@@ -233,8 +233,8 @@ impl AuthService {
     fn build_access_claims(&self, user_id: Uuid) -> Result<(Claims, OffsetDateTime)> {
         let duration = std::time::Duration::from_secs(self.access_ttl_minutes * 60);
         let mut claims = Claims::new_expires_in(&duration)?;
-        claims.issuer("picshare")?;
-        claims.audience("picshare")?;
+        claims.issuer("lumine")?;
+        claims.audience("lumine")?;
         claims.subject(&user_id.to_string())?;
         claims.add_additional("typ", "access")?;
         let expires_at = OffsetDateTime::now_utc() + Duration::minutes(self.access_ttl_minutes as i64);
@@ -248,8 +248,8 @@ impl AuthService {
     ) -> Result<(Claims, OffsetDateTime)> {
         let duration = std::time::Duration::from_secs(self.refresh_ttl_days * 24 * 60 * 60);
         let mut claims = Claims::new_expires_in(&duration)?;
-        claims.issuer("picshare")?;
-        claims.audience("picshare")?;
+        claims.issuer("lumine")?;
+        claims.audience("lumine")?;
         claims.subject(&user_id.to_string())?;
         claims.token_identifier(&refresh_id.to_string())?;
         claims.add_additional("typ", "refresh")?;

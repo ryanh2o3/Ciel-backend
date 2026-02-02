@@ -12,7 +12,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
  && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
-COPY --from=builder /app/target/release/picshare /app/picshare
+COPY --from=builder /app/target/release/lumine /app/lumine
 
 EXPOSE 8080
-CMD ["/app/picshare"]
+CMD ["/app/lumine"]

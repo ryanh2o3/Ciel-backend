@@ -17,7 +17,7 @@ if ! docker compose exec -T localstack sh -c "test -d /seed-images"; then
 fi
 
 docker compose exec -T localstack sh -c \
-  "awslocal s3 mb s3://picshare-media >/dev/null 2>&1 || true"
+  "awslocal s3 mb s3://lumine-media >/dev/null 2>&1 || true"
 
 docker compose exec -T localstack sh -c \
   "find /seed-images -type f 2>/dev/null | while read -r f; do
@@ -27,9 +27,9 @@ docker compose exec -T localstack sh -c \
      thumb_key=\"seed/\${base}_thumb.jpg\"
      medium_key=\"seed/\${base}_medium.jpg\"
 
-     awslocal s3 cp \"\$f\" \"s3://picshare-media/\$key\"
-     awslocal s3 cp \"\$f\" \"s3://picshare-media/\$thumb_key\"
-     awslocal s3 cp \"\$f\" \"s3://picshare-media/\$medium_key\"
+     awslocal s3 cp \"\$f\" \"s3://lumine-media/\$key\"
+     awslocal s3 cp \"\$f\" \"s3://lumine-media/\$thumb_key\"
+     awslocal s3 cp \"\$f\" \"s3://lumine-media/\$medium_key\"
    done"
 
-echo "Uploaded seed images to s3://picshare-media/seed/"
+echo "Uploaded seed images to s3://lumine-media/seed/"

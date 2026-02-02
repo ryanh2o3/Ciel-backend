@@ -1,6 +1,6 @@
-## PicShare API Integration Guide
+## Luminé API Integration Guide
 
-This document describes how a client app connects to the PicShare backend, how to use auth, and how to call every endpoint. It also includes data access and pagination best practices for scalable clients.
+This document describes how a client app connects to the Luminé backend, how to use auth, and how to call every endpoint. It also includes data access and pagination best practices for scalable clients.
 
 ### Base URL
 - Local Docker Compose: `http://localhost:8080`
@@ -23,7 +23,7 @@ All errors are JSON:
 
 ### Rate Limiting & Safety Features
 
-PicShare implements comprehensive safety and anti-abuse measures:
+Luminé implements comprehensive safety and anti-abuse measures:
 
 #### Rate Limiting
 - All authenticated endpoints are rate-limited based on user trust level

@@ -2,13 +2,13 @@ services:
   db:
     image: postgres:16
     environment:
-      POSTGRES_USER: picshare
-      POSTGRES_PASSWORD: picshare
-      POSTGRES_DB: picshare
+      POSTGRES_USER: lumine
+      POSTGRES_PASSWORD: lumine
+      POSTGRES_DB: lumine
     ports:
       - "5432:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U picshare -d picshare"]
+      test: ["CMD-SHELL", "pg_isready -U lumine -d lumine"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -47,7 +47,7 @@ services:
       db:
         condition: service_healthy
     environment:
-      PGPASSWORD: picshare
+      PGPASSWORD: lumine
     volumes:
       - "./migrations:/migrations"
       - "./docker/migrate.sh:/migrate.sh"
@@ -66,18 +66,18 @@ services:
       migrate:
         condition: service_completed_successfully
     environment:
-      RUST_LOG: debug,tower_http=debug,picshare::app::media=debug
+      RUST_LOG: debug,tower_http=debug,lumine::app::media=debug
       APP_MODE: api
       HTTP_ADDR: 0.0.0.0:8080
-      DATABASE_URL: postgres://picshare:picshare@db:5432/picshare
+      DATABASE_URL: postgres://lumine:lumine@db:5432/lumine
       REDIS_URL: redis://redis:6379/
       S3_ENDPOINT: http://localstack:4566
       S3_REGION: us-east-1
-      S3_BUCKET: picshare-media
+      S3_BUCKET: lumine-media
       S3_PUBLIC_ENDPOINT: 192.168.1.66:4566
       QUEUE_ENDPOINT: http://localstack:4566
       QUEUE_REGION: us-east-1
-      QUEUE_NAME: picshare-media-jobs
+      QUEUE_NAME: lumine-media-jobs
       AUTH_TOKEN_TTL_HOURS: 168
       ACCESS_TTL_MINUTES: 15
       REFRESH_TTL_DAYS: 30
@@ -106,15 +106,15 @@ services:
     environment:
       RUST_LOG: info
       APP_MODE: worker
-      DATABASE_URL: postgres://picshare:picshare@db:5432/picshare
+      DATABASE_URL: postgres://lumine:lumine@db:5432/lumine
       REDIS_URL: redis://redis:6379/
       S3_ENDPOINT: http://localstack:4566
       S3_REGION: us-east-1
-      S3_BUCKET: picshare-media
+      S3_BUCKET: lumine-media
       S3_PUBLIC_ENDPOINT: 192.168.1.66:4566
       QUEUE_ENDPOINT: http://localstack:4566
       QUEUE_REGION: us-east-1
-      QUEUE_NAME: picshare-media-jobs
+      QUEUE_NAME: lumine-media-jobs
       AUTH_TOKEN_TTL_HOURS: 168
       ACCESS_TTL_MINUTES: 15
       REFRESH_TTL_DAYS: 30

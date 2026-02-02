@@ -1,8 +1,8 @@
-# PicShare End-to-End Encryption Implementation Plan
+# Luminé End-to-End Encryption Implementation Plan
 
 ## Executive Summary
 
-This document outlines a comprehensive plan to implement end-to-end encryption (E2EE) for PicShare, ensuring that only intended recipients can view media content. The solution draws from industry best practices, particularly Signal's proven architecture, while adapting to PicShare's social media use case.
+This document outlines a comprehensive plan to implement end-to-end encryption (E2EE) for Luminé, ensuring that only intended recipients can view media content. The solution draws from industry best practices, particularly Signal's proven architecture, while adapting to Luminé's social media use case.
 
 ## 1. Architecture Overview
 
@@ -14,7 +14,7 @@ This document outlines a comprehensive plan to implement end-to-end encryption (
 
 ### High-Level Architecture
 ```
-[User Device] ←E2EE→ [PicShare Server] ←E2EE→ [Recipient Device]
+[User Device] ←E2EE→ [Luminé Server] ←E2EE→ [Recipient Device]
     │                  │
     ├─ Generate keys   ├─ Store encrypted keys
     ├─ Encrypt media   ├─ Manage access control
@@ -467,6 +467,6 @@ impl SignalProtocol {
 
 ## Conclusion
 
-This plan outlines a comprehensive approach to implementing end-to-end encryption in PicShare, drawing from the best practices of industry leaders like Signal while adapting to the specific needs of a social media platform. The phased implementation allows for gradual rollout and testing, while the integration of proven protocols like Signal's Double Ratchet ensures robust security.
+This plan outlines a comprehensive approach to implementing end-to-end encryption in Luminé, drawing from the best practices of industry leaders like Signal while adapting to the specific needs of a social media platform. The phased implementation allows for gradual rollout and testing, while the integration of proven protocols like Signal's Double Ratchet ensures robust security.
 
-The successful implementation of this plan will position PicShare as a leader in user privacy, providing true end-to-end encryption where even the platform operator cannot access user content, while maintaining a user-friendly experience and robust recovery options.
+The successful implementation of this plan will position Luminé as a leader in user privacy, providing true end-to-end encryption where even the platform operator cannot access user content, while maintaining a user-friendly experience and robust recovery options.

@@ -19,14 +19,14 @@ for i in {1..30}; do
 done
 
 echo "Clearing existing data..."
-docker compose exec -T db psql -U picshare -d picshare -c "DELETE FROM users;"
+docker compose exec -T db psql -U lumine -d lumine -c "DELETE FROM users;"
 docker compose exec -T redis redis-cli flushdb
 
 echo "Creating users via API (with proper password hashes)..."
 # Create demo user
 curl -s -X POST http://localhost:8080/users \
   -H "Content-Type: application/json" \
-  -d '{"handle":"demo","email":"demo@example.com","display_name":"Demo User","bio":"Hello from PicShare.","password":"ChangeMe123!"}' \
+  -d '{"handle":"demo","email":"demo@example.com","display_name":"Demo User","bio":"Hello from Luminé.","password":"ChangeMe123!"}' \
   > /dev/null
 
 # Create alice user
@@ -48,6 +48,6 @@ curl -s -X POST http://localhost:8080/users \
   > /dev/null
 
 echo "Creating sample content..."
-docker compose exec -T db psql -U picshare -d picshare < docker/seed/seed_content.sql
+docker compose exec -T db psql -U lumine -d lumine < docker/seed/seed_content.sql
 
 echo "Seed data loaded successfully!"
