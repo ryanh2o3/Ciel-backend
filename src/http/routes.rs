@@ -99,6 +99,38 @@ pub fn search() -> Router<AppState> {
         .route("/search/posts", get(handlers::search_posts))
 }
 
+pub fn stories() -> Router<AppState> {
+    Router::new()
+        .route("/stories", post(handlers::create_story))
+        .route("/stories/:id", get(handlers::get_story))
+        .route("/stories/:id", delete(handlers::delete_story))
+        .route("/stories/:id/viewers", get(handlers::get_story_viewers))
+        .route(
+            "/stories/:id/reactions",
+            post(handlers::add_story_reaction),
+        )
+        .route(
+            "/stories/:id/reactions",
+            get(handlers::list_story_reactions),
+        )
+        .route(
+            "/stories/:id/reactions",
+            delete(handlers::remove_story_reaction),
+        )
+        .route("/stories/:id/seen", post(handlers::mark_story_seen))
+        .route("/stories/:id/metrics", get(handlers::get_story_metrics))
+        .route(
+            "/stories/:id/highlights",
+            post(handlers::add_story_to_highlight),
+        )
+        .route("/users/:id/stories", get(handlers::get_user_stories))
+        .route(
+            "/users/:id/highlights",
+            get(handlers::get_user_highlights),
+        )
+        .route("/feed/stories", get(handlers::get_stories_feed))
+}
+
 pub fn safety() -> Router<AppState> {
     Router::new()
         // Trust & Rate Limiting

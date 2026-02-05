@@ -46,6 +46,14 @@ pub fn router(state: AppState) -> Router {
         .merge(routes::notifications())
         .merge(routes::moderation())
         .merge(routes::search())
+        // Stories with rate limiting
+        .merge(
+            routes::stories()
+                .layer(axum_middleware::from_fn_with_state(
+                    state.clone(),
+                    middleware::rate_limit::rate_limit_middleware,
+                ))
+        )
         // Add safety routes
         .merge(routes::safety())
         .with_state(state)

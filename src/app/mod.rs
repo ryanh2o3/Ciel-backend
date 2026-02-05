@@ -10,6 +10,7 @@ pub mod posts;
 pub mod rate_limiter;
 pub mod search;
 pub mod social;
+pub mod stories;
 pub mod trust;
 pub mod users;
 

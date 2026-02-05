@@ -1561,3 +1561,312 @@ pub async fn revoke_invite(
         Err(AppError::not_found("invite code not found or already used"))
     }
 }
+
+// ============================================================================
+// Story Handlers
+// ============================================================================
+
+#[derive(Deserialize)]
+pub struct CreateStoryRequest {
+    pub media_id: Uuid,
+    pub caption: Option<String>,
+    pub visibility: crate::domain::story::StoryVisibility,
+}
+
+pub async fn create_story(
+    auth: AuthUser,
+    State(state): State<AppState>,
+    Json(payload): Json<CreateStoryRequest>,
+) -> Result<Json<crate::domain::story::Story>, AppError> {
+    let service =
+        crate::app::stories::StoryService::new(state.db.clone(), state.cache.clone());
+    let story = service
+        .create_story(auth.user_id, payload.media_id, payload.caption, payload.visibility)
+        .await
+        .map_err(|err| {
+            if err.to_string().contains("media not found") {
+                return AppError::not_found("media not found");
+            }
+            if err.to_string().contains("does not belong") {
+                return AppError::forbidden("media does not belong to you");
+            }
+            tracing::error!(error = ?err, user_id = %auth.user_id, "failed to create story");
+            AppError::internal("failed to create story")
+        })?;
+
+    Ok(Json(story))
+}
+
+pub async fn get_user_stories(
+    Path(id): Path<Uuid>,
+    auth: AuthUser,
+    State(state): State<AppState>,
+) -> Result<Json<Vec<crate::domain::story::Story>>, AppError> {
+    let service =
+        crate::app::stories::StoryService::new(state.db.clone(), state.cache.clone());
+    let stories = service
+        .get_user_stories(id, auth.user_id)
+        .await
+        .map_err(|err| {
+            tracing::error!(error = ?err, user_id = %id, "failed to get user stories");
+            AppError::internal("failed to get user stories")
+        })?;
+
+    Ok(Json(stories))
+}
+
+pub async fn get_story(
+    Path(id): Path<Uuid>,
+    auth: AuthUser,
+    State(state): State<AppState>,
+) -> Result<Json<crate::domain::story::Story>, AppError> {
+    let service =
+        crate::app::stories::StoryService::new(state.db.clone(), state.cache.clone());
+    let story = service
+        .get_story(id, auth.user_id)
+        .await
+        .map_err(|err| {
+            tracing::error!(error = ?err, story_id = %id, "failed to get story");
+            AppError::internal("failed to get story")
+        })?;
+
+    match story {
+        Some(story) => Ok(Json(story)),
+        None => Err(AppError::not_found("story not found")),
+    }
+}
+
+pub async fn delete_story(
+    Path(id): Path<Uuid>,
+    auth: AuthUser,
+    State(state): State<AppState>,
+) -> Result<StatusCode, AppError> {
+    let service =
+        crate::app::stories::StoryService::new(state.db.clone(), state.cache.clone());
+    let deleted = service
+        .delete_story(id, auth.user_id)
+        .await
+        .map_err(|err| {
+            tracing::error!(error = ?err, story_id = %id, "failed to delete story");
+            AppError::internal("failed to delete story")
+        })?;
+
+    if deleted {
+        Ok(StatusCode::NO_CONTENT)
+    } else {
+        Err(AppError::not_found("story not found"))
+    }
+}
+
+pub async fn get_story_viewers(
+    Path(id): Path<Uuid>,
+    auth: AuthUser,
+    State(state): State<AppState>,
+) -> Result<Json<Vec<crate::domain::story::StoryView>>, AppError> {
+    let service =
+        crate::app::stories::StoryService::new(state.db.clone(), state.cache.clone());
+
+    let owner = service
+        .get_story_owner(id)
+        .await
+        .map_err(|err| {
+            tracing::error!(error = ?err, story_id = %id, "failed to check story ownership");
+            AppError::internal("failed to get story viewers")
+        })?;
+
+    match owner {
+        Some(owner_id) if owner_id == auth.user_id => {}
+        Some(_) => return Err(AppError::forbidden("only the story owner can view viewers")),
+        None => return Err(AppError::not_found("story not found")),
+    }
+
+    let viewers = service.list_viewers(id).await.map_err(|err| {
+        tracing::error!(error = ?err, story_id = %id, "failed to list story viewers");
+        AppError::internal("failed to list story viewers")
+    })?;
+
+    Ok(Json(viewers))
+}
+
+#[derive(Deserialize)]
+pub struct AddReactionRequest {
+    pub emoji: String,
+}
+
+pub async fn add_story_reaction(
+    Path(id): Path<Uuid>,
+    auth: AuthUser,
+    State(state): State<AppState>,
+    Json(payload): Json<AddReactionRequest>,
+) -> Result<Json<crate::domain::story::StoryReaction>, AppError> {
+    if payload.emoji.trim().is_empty() {
+        return Err(AppError::bad_request("emoji cannot be empty"));
+    }
+
+    let service =
+        crate::app::stories::StoryService::new(state.db.clone(), state.cache.clone());
+    let reaction = service
+        .add_reaction(id, auth.user_id, payload.emoji)
+        .await
+        .map_err(|err| {
+            if let Some(sqlx_err) = err.downcast_ref::<sqlx::Error>() {
+                if let Some(db_err) = sqlx_err.as_database_error() {
+                    if let Some(code) = db_err.code() {
+                        if code == "23503" {
+                            return AppError::not_found("story not found");
+                        }
+                    }
+                }
+            }
+            tracing::error!(error = ?err, story_id = %id, user_id = %auth.user_id, "failed to add reaction");
+            AppError::internal("failed to add reaction")
+        })?;
+
+    Ok(Json(reaction))
+}
+
+pub async fn list_story_reactions(
+    Path(id): Path<Uuid>,
+    State(state): State<AppState>,
+) -> Result<Json<Vec<crate::domain::story::StoryReaction>>, AppError> {
+    let service =
+        crate::app::stories::StoryService::new(state.db.clone(), state.cache.clone());
+    let reactions = service.list_reactions(id).await.map_err(|err| {
+        tracing::error!(error = ?err, story_id = %id, "failed to list story reactions");
+        AppError::internal("failed to list story reactions")
+    })?;
+
+    Ok(Json(reactions))
+}
+
+pub async fn remove_story_reaction(
+    Path(id): Path<Uuid>,
+    auth: AuthUser,
+    State(state): State<AppState>,
+) -> Result<StatusCode, AppError> {
+    let service =
+        crate::app::stories::StoryService::new(state.db.clone(), state.cache.clone());
+    let removed = service
+        .remove_reaction(id, auth.user_id)
+        .await
+        .map_err(|err| {
+            tracing::error!(error = ?err, story_id = %id, user_id = %auth.user_id, "failed to remove reaction");
+            AppError::internal("failed to remove reaction")
+        })?;
+
+    if removed {
+        Ok(StatusCode::NO_CONTENT)
+    } else {
+        Err(AppError::not_found("reaction not found"))
+    }
+}
+
+pub async fn mark_story_seen(
+    Path(id): Path<Uuid>,
+    auth: AuthUser,
+    State(state): State<AppState>,
+) -> Result<StatusCode, AppError> {
+    let service =
+        crate::app::stories::StoryService::new(state.db.clone(), state.cache.clone());
+    service
+        .mark_seen(id, auth.user_id)
+        .await
+        .map_err(|err| {
+            if let Some(sqlx_err) = err.downcast_ref::<sqlx::Error>() {
+                if let Some(db_err) = sqlx_err.as_database_error() {
+                    if let Some(code) = db_err.code() {
+                        if code == "23503" {
+                            return AppError::not_found("story not found");
+                        }
+                    }
+                }
+            }
+            tracing::error!(error = ?err, story_id = %id, user_id = %auth.user_id, "failed to mark story seen");
+            AppError::internal("failed to mark story seen")
+        })?;
+
+    Ok(StatusCode::NO_CONTENT)
+}
+
+pub async fn get_stories_feed(
+    auth: AuthUser,
+    State(state): State<AppState>,
+) -> Result<Json<Vec<crate::domain::story::Story>>, AppError> {
+    let service =
+        crate::app::stories::StoryService::new(state.db.clone(), state.cache.clone());
+    let stories = service
+        .get_stories_feed(auth.user_id)
+        .await
+        .map_err(|err| {
+            tracing::error!(error = ?err, user_id = %auth.user_id, "failed to get stories feed");
+            AppError::internal("failed to get stories feed")
+        })?;
+
+    Ok(Json(stories))
+}
+
+pub async fn get_story_metrics(
+    Path(id): Path<Uuid>,
+    auth: AuthUser,
+    State(state): State<AppState>,
+) -> Result<Json<crate::domain::story::StoryMetrics>, AppError> {
+    let service =
+        crate::app::stories::StoryService::new(state.db.clone(), state.cache.clone());
+    let metrics = service
+        .get_metrics(id, auth.user_id)
+        .await
+        .map_err(|err| {
+            tracing::error!(error = ?err, story_id = %id, user_id = %auth.user_id, "failed to get story metrics");
+            AppError::internal("failed to get story metrics")
+        })?;
+
+    match metrics {
+        Some(metrics) => Ok(Json(metrics)),
+        None => Err(AppError::not_found("story not found")),
+    }
+}
+
+#[derive(Deserialize)]
+pub struct AddToHighlightRequest {
+    pub highlight_name: String,
+}
+
+pub async fn add_story_to_highlight(
+    Path(id): Path<Uuid>,
+    auth: AuthUser,
+    State(state): State<AppState>,
+    Json(payload): Json<AddToHighlightRequest>,
+) -> Result<Json<crate::domain::story::StoryHighlight>, AppError> {
+    if payload.highlight_name.trim().is_empty() {
+        return Err(AppError::bad_request("highlight_name cannot be empty"));
+    }
+
+    let service =
+        crate::app::stories::StoryService::new(state.db.clone(), state.cache.clone());
+    let highlight = service
+        .add_to_highlight(auth.user_id, id, payload.highlight_name)
+        .await
+        .map_err(|err| {
+            if err.to_string().contains("story not found") {
+                return AppError::not_found("story not found");
+            }
+            tracing::error!(error = ?err, story_id = %id, user_id = %auth.user_id, "failed to add to highlight");
+            AppError::internal("failed to add to highlight")
+        })?;
+
+    Ok(Json(highlight))
+}
+
+pub async fn get_user_highlights(
+    Path(id): Path<Uuid>,
+    State(state): State<AppState>,
+) -> Result<Json<Vec<crate::domain::story::StoryHighlight>>, AppError> {
+    let service =
+        crate::app::stories::StoryService::new(state.db.clone(), state.cache.clone());
+    let highlights = service.get_user_highlights(id).await.map_err(|err| {
+        tracing::error!(error = ?err, user_id = %id, "failed to get user highlights");
+        AppError::internal("failed to get user highlights")
+    })?;
+
+    Ok(Json(highlights))
+}
