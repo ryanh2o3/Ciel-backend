@@ -1,6 +1,6 @@
 use axum::{
     body::Body,
-    http::{header, Request, Response, StatusCode},
+    http::{header, header::HeaderName, Request, Response, StatusCode},
     middleware::Next,
 };
 
@@ -65,7 +65,7 @@ pub async fn security_headers_middleware(
 
     // X-XSS-Protection: legacy XSS protection for older browsers
     headers.insert(
-        "x-xss-protection".parse().unwrap(),
+        "x-xss-protection".parse::<HeaderName>().unwrap(),
         "1; mode=block".parse().unwrap(),
     );
 
@@ -77,7 +77,7 @@ pub async fn security_headers_middleware(
 
     // Referrer-Policy: don't leak referrer information
     headers.insert(
-        "referrer-policy".parse().unwrap(),
+        "referrer-policy".parse::<HeaderName>().unwrap(),
         "no-referrer".parse().unwrap(),
     );
 

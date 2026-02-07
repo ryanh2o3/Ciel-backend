@@ -318,7 +318,7 @@ impl InviteService {
     pub async fn revoke_invite(&self, code: &str, user_id: Uuid) -> Result<bool> {
         let result = sqlx::query(
             "UPDATE invite_codes \
-             SET is_valid = FALSE, updated_at = NOW() \
+             SET is_valid = FALSE \
              WHERE code = $1 AND created_by = $2 AND is_valid = TRUE",
         )
         .bind(code)

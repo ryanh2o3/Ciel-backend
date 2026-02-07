@@ -504,6 +504,9 @@ pub async fn follow_user(
 
     let service = SocialService::new(state.db.clone());
     let followed = service.follow(auth.user_id, id).await.map_err(|err| {
+        if err.to_string().contains("user not found") {
+            return AppError::not_found("user not found");
+        }
         if err.to_string().contains("follower limit") {
             return AppError::forbidden("user has reached the follower limit");
         }
@@ -740,6 +743,13 @@ pub async fn create_post(
         .create_post(auth.user_id, payload.media_id, payload.caption)
         .await
         .map_err(|err| {
+            if let Some(db_err) = err.downcast_ref::<sqlx::Error>() {
+                if let sqlx::Error::Database(ref e) = db_err {
+                    if e.code().as_deref() == Some("23503") {
+                        return AppError::bad_request("invalid media_id");
+                    }
+                }
+            }
             tracing::error!(error = ?err, owner_id = %auth.user_id, "failed to create post");
             AppError::internal("failed to create post")
         })?;

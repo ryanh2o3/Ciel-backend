@@ -1,0 +1,133 @@
+name: Tests
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "src/**"
+      - "tests/**"
+      - "migrations/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/test.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "src/**"
+      - "tests/**"
+      - "migrations/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/test.yml"
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  check:
+    name: Compile Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry & build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-
+
+      - name: cargo check
+        run: cargo check --all-targets
+
+  test:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    needs: check
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: ciel
+          POSTGRES_PASSWORD: ciel
+          POSTGRES_DB: ciel
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ciel -d ciel"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
+      localstack:
+        image: localstack/localstack:3
+        env:
+          SERVICES: s3,sqs
+          AWS_DEFAULT_REGION: us-east-1
+        ports:
+          - 4566:4566
+        options: >-
+          --health-cmd "curl -sf http://localhost:4566/_localstack/health"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry & build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-test-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-test-
+            ${{ runner.os }}-cargo-
+
+      - name: Initialize LocalStack (S3 bucket + SQS queue)
+        env:
+          AWS_ACCESS_KEY_ID: test
+          AWS_SECRET_ACCESS_KEY: test
+          AWS_DEFAULT_REGION: us-east-1
+        run: |
+          pip install awscli-local
+          awslocal s3 mb s3://ciel-media-test --endpoint-url http://localhost:4566
+          awslocal sqs create-queue --queue-name ciel-media-jobs-test --endpoint-url http://localhost:4566
+
+      - name: Run tests
+        env:
+          TEST_DATABASE_BASE_URL: postgres://ciel:ciel@localhost:5432
+          TEST_DATABASE_NAME: ciel_test
+          TEST_REDIS_URL: redis://localhost:6379/1
+          TEST_S3_ENDPOINT: http://localhost:4566
+          TEST_QUEUE_ENDPOINT: http://localhost:4566
+          AWS_ACCESS_KEY_ID: test
+          AWS_SECRET_ACCESS_KEY: test
+          AWS_DEFAULT_REGION: us-east-1
+          RUST_LOG: warn
+        run: cargo test --test '*' -- --test-threads=1

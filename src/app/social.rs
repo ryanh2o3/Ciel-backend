@@ -35,10 +35,14 @@ impl SocialService {
 
         let mut tx = self.db.pool().begin().await?;
 
-        sqlx::query("SELECT id FROM users WHERE id = $1 FOR UPDATE")
+        let user_exists = sqlx::query("SELECT id FROM users WHERE id = $1 FOR UPDATE")
             .bind(followee_id)
-            .fetch_one(&mut *tx)
+            .fetch_optional(&mut *tx)
             .await?;
+
+        if user_exists.is_none() {
+            return Err(anyhow::anyhow!("user not found"));
+        }
 
         let follower_count: i64 = sqlx::query_scalar(
             "SELECT COUNT(*) FROM follows WHERE followee_id = $1",

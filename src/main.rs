@@ -4,32 +4,9 @@ use std::net::SocketAddr;
 use tower_http::trace::TraceLayer;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
-mod app;
-mod config;
-mod domain;
-mod http;
-mod infra;
-mod jobs;
-
-use crate::config::AppConfig;
-use crate::infra::{cache::RedisCache, db::Db, queue::QueueClient, storage::ObjectStorage};
-
-#[derive(Clone)]
-pub struct AppState {
-    pub db: Db,
-    pub cache: RedisCache,
-    pub storage: ObjectStorage,
-    pub queue: QueueClient,
-    pub auth_token_ttl_hours: u64,
-    pub upload_url_ttl_seconds: u64,
-    pub upload_max_bytes: i64,
-    pub admin_token: Option<String>,
-    pub paseto_access_key: [u8; 32],
-    pub paseto_refresh_key: [u8; 32],
-    pub access_ttl_minutes: u64,
-    pub refresh_ttl_days: u64,
-    pub s3_public_endpoint: Option<String>,
-}
+use ciel::config::AppConfig;
+use ciel::infra::{cache::RedisCache, db::Db, queue::QueueClient, storage::ObjectStorage};
+use ciel::AppState;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -63,13 +40,13 @@ async fn main() -> anyhow::Result<()> {
 
     match config.app_mode.as_str() {
         "api" => {
-            let app: Router = http::router(state).layer(TraceLayer::new_for_http());
+            let app: Router = ciel::http::router(state).layer(TraceLayer::new_for_http());
             let listener = tokio::net::TcpListener::bind(&config.http_addr).await?;
             tracing::info!("listening on {}", config.http_addr);
-            
+
             // Convert the router to handle ConnectInfo properly
             let app = app.into_make_service_with_connect_info::<SocketAddr>();
-            
+
             axum::serve(listener, app)
                 .with_graceful_shutdown(shutdown_signal())
                 .await?;
@@ -77,7 +54,7 @@ async fn main() -> anyhow::Result<()> {
         "worker" => {
             tracing::info!("starting worker mode");
             tokio::select! {
-                result = jobs::media_processor::run(state.db.clone(), state.storage.clone(), state.queue.clone()) => {
+                result = ciel::jobs::media_processor::run(state.db.clone(), state.storage.clone(), state.queue.clone()) => {
                     result?;
                 }
                 _ = shutdown_signal() => {}
@@ -119,4 +96,3 @@ async fn shutdown_signal() {
 
     tracing::info!("shutdown signal received");
 }
-

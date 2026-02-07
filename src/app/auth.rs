@@ -278,7 +278,7 @@ impl AuthService {
         Ok((claims, expires_at))
     }
 
-    async fn issue_token_pair(&self, user_id: Uuid) -> Result<TokenPair> {
+    pub async fn issue_token_pair(&self, user_id: Uuid) -> Result<TokenPair> {
         let mut tx = self.db.pool().begin().await?;
         let tokens = self.issue_token_pair_with_tx(user_id, &mut tx).await?;
         tx.commit().await?;

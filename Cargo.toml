@@ -30,3 +30,7 @@ base64 = "0.22.1"
 pasetors = "0.7.7"
 rand = "0.8"
 url = "2"
+
+[dev-dependencies]
+http-body-util = "0.1"
+tower = { version = "0.4", features = ["util"] }
