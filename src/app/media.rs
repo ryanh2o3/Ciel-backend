@@ -368,6 +368,56 @@ impl MediaService {
 
         Ok(result.rows_affected() > 0)
     }
+
+    /// Generate a presigned GET URL for any object key (e.g., avatars)
+    /// Returns None if the key is None or URL generation fails
+    pub async fn generate_presigned_get_url(
+        &self,
+        object_key: Option<&str>,
+        expires_in_seconds: u64,
+    ) -> Option<String> {
+        let key = object_key?;
+        
+        let presign_config = PresigningConfig::expires_in(Duration::from_secs(expires_in_seconds))
+            .ok()?;
+        
+        let presigned = self
+            .storage
+            .client()
+            .get_object()
+            .bucket(self.storage.bucket())
+            .key(key)
+            .presigned(presign_config)
+            .await
+            .ok()?;
+        
+        let mut url = presigned.uri().to_string();
+        
+        // Rewrite to public endpoint if configured
+        if let Some(ref public_endpoint) = self.s3_public_endpoint {
+            if let Ok(rewritten) = rewrite_presigned_url(&url, public_endpoint) {
+                url = rewritten;
+            }
+        }
+        
+        Some(url)
+    }
+
+    /// Populate avatar_url for a User by generating a presigned URL from avatar_key
+    pub async fn populate_user_avatar_url(&self, user: &mut crate::domain::user::User) {
+        if user.avatar_key.is_some() {
+            user.avatar_url = self
+                .generate_presigned_get_url(user.avatar_key.as_deref(), 3600)
+                .await;
+        }
+    }
+
+    /// Populate avatar URLs for a list of Users
+    pub async fn populate_users_avatar_urls(&self, users: &mut [crate::domain::user::User]) {
+        for user in users.iter_mut() {
+            self.populate_user_avatar_url(user).await;
+        }
+    }
 }
 
 fn extension_from_content_type(content_type: &str) -> Result<&'static str> {

@@ -128,6 +128,10 @@ pub fn router(state: AppState) -> Router {
         )
         .with_state(state)
         // Global middleware layers (applied to all routes)
+        // Security headers and HTTPS enforcement
+        .layer(axum_middleware::from_fn(
+            middleware::security::security_headers_middleware,
+        ))
         // Response compression (gzip, brotli)
         .layer(CompressionLayer::new())
         // Request body size limit (10MB default, matches UPLOAD_MAX_BYTES)

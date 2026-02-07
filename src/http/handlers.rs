@@ -21,6 +21,29 @@ use crate::app::users::UserService;
 use crate::http::{AdminToken, AppError, AuthUser};
 use crate::AppState;
 
+// Input validation constants
+const MAX_HANDLE_LEN: usize = 30;
+const MIN_HANDLE_LEN: usize = 3;
+const MAX_DISPLAY_NAME_LEN: usize = 50;
+const MAX_BIO_LEN: usize = 500;
+const MAX_CAPTION_LEN: usize = 2200;
+const MAX_PASSWORD_LEN: usize = 128;
+
+/// Validate handle format: alphanumeric and underscores only, 3-30 characters
+fn validate_handle(handle: &str) -> Result<(), AppError> {
+    let handle = handle.trim();
+    if handle.len() < MIN_HANDLE_LEN {
+        return Err(AppError::bad_request("handle must be at least 3 characters"));
+    }
+    if handle.len() > MAX_HANDLE_LEN {
+        return Err(AppError::bad_request("handle must be at most 30 characters"));
+    }
+    if !handle.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
+        return Err(AppError::bad_request("handle can only contain letters, numbers, and underscores"));
+    }
+    Ok(())
+}
+
 #[derive(Serialize)]
 pub(crate) struct HealthResponse {
     status: &'static str,
@@ -222,7 +245,16 @@ pub async fn get_current_user(
         })?;
 
     match user {
-        Some(user) => Ok(Json(user)),
+        Some(mut user) => {
+            let media_svc = MediaService::new(
+                state.db.clone(),
+                state.storage.clone(),
+                state.queue.clone(),
+                state.s3_public_endpoint.clone(),
+            );
+            media_svc.populate_user_avatar_url(&mut user).await;
+            Ok(Json(user))
+        }
         None => Err(AppError::not_found("user not found")),
     }
 }
@@ -238,7 +270,16 @@ pub async fn get_user(
     })?;
 
     match user {
-        Some(user) => Ok(Json(user.into())),
+        Some(mut user) => {
+            let media_svc = MediaService::new(
+                state.db.clone(),
+                state.storage.clone(),
+                state.queue.clone(),
+                state.s3_public_endpoint.clone(),
+            );
+            media_svc.populate_user_avatar_url(&mut user).await;
+            Ok(Json(user.into()))
+        }
         None => Err(AppError::not_found("user not found")),
     }
 }
@@ -258,16 +299,22 @@ pub async fn create_user(
     State(state): State<AppState>,
     Json(payload): Json<CreateUserRequest>,
 ) -> Result<Json<crate::domain::user::User>, AppError> {
-    const MAX_PASSWORD_LEN: usize = 128;
-
-    if payload.handle.trim().is_empty() {
-        return Err(AppError::bad_request("handle cannot be empty"));
-    }
+    // Validate handle format
+    validate_handle(&payload.handle)?;
+    
     if payload.email.trim().is_empty() {
         return Err(AppError::bad_request("email cannot be empty"));
     }
     if payload.display_name.trim().is_empty() {
         return Err(AppError::bad_request("display_name cannot be empty"));
+    }
+    if payload.display_name.len() > MAX_DISPLAY_NAME_LEN {
+        return Err(AppError::bad_request("display_name must be at most 50 characters"));
+    }
+    if let Some(ref bio) = payload.bio {
+        if bio.len() > MAX_BIO_LEN {
+            return Err(AppError::bad_request("bio must be at most 500 characters"));
+        }
     }
     if payload.password.trim().len() < 8 {
         return Err(AppError::bad_request("password must be at least 8 characters"));
@@ -321,6 +368,16 @@ pub async fn create_user(
             AppError::internal("failed to create user")
         })?;
 
+    // Populate avatar URL if avatar_key exists
+    let mut user = user;
+    let media_svc = MediaService::new(
+        state.db.clone(),
+        state.storage.clone(),
+        state.queue.clone(),
+        state.s3_public_endpoint.clone(),
+    );
+    media_svc.populate_user_avatar_url(&mut user).await;
+
     Ok(Json(user))
 }
 
@@ -345,6 +402,14 @@ pub async fn update_profile(
         if display_name.trim().is_empty() {
             return Err(AppError::bad_request("display_name cannot be empty"));
         }
+        if display_name.len() > MAX_DISPLAY_NAME_LEN {
+            return Err(AppError::bad_request("display_name must be at most 50 characters"));
+        }
+    }
+    if let Some(ref bio) = payload.bio {
+        if bio.len() > MAX_BIO_LEN {
+            return Err(AppError::bad_request("bio must be at most 500 characters"));
+        }
     }
 
     let service = UserService::new(state.db.clone());
@@ -357,7 +422,16 @@ pub async fn update_profile(
         })?;
 
     match user {
-        Some(user) => Ok(Json(user)),
+        Some(mut user) => {
+            let media_svc = MediaService::new(
+                state.db.clone(),
+                state.storage.clone(),
+                state.queue.clone(),
+                state.s3_public_endpoint.clone(),
+            );
+            media_svc.populate_user_avatar_url(&mut user).await;
+            Ok(Json(user))
+        }
         None => Err(AppError::not_found("user not found")),
     }
 }
@@ -655,6 +729,12 @@ pub async fn create_post(
     State(state): State<AppState>,
     Json(payload): Json<CreatePostRequest>,
 ) -> Result<Json<crate::domain::post::Post>, AppError> {
+    if let Some(ref caption) = payload.caption {
+        if caption.len() > MAX_CAPTION_LEN {
+            return Err(AppError::bad_request("caption must be at most 2200 characters"));
+        }
+    }
+    
     let service = PostService::new(state.db.clone());
     let post = service
         .create_post(auth.user_id, payload.media_id, payload.caption)
@@ -696,6 +776,12 @@ pub async fn update_post_caption(
     State(state): State<AppState>,
     Json(payload): Json<UpdateCaptionRequest>,
 ) -> Result<Json<crate::domain::post::Post>, AppError> {
+    if let Some(ref caption) = payload.caption {
+        if caption.len() > MAX_CAPTION_LEN {
+            return Err(AppError::bad_request("caption must be at most 2200 characters"));
+        }
+    }
+    
     let service = PostService::new(state.db.clone());
     let post = service
         .update_caption(id, auth.user_id, payload.caption)

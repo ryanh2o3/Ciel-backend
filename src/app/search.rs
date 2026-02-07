@@ -65,6 +65,7 @@ impl SearchService {
                 display_name: row.get("display_name"),
                 bio: row.get("bio"),
                 avatar_key: row.get("avatar_key"),
+                avatar_url: None,
                 created_at: row.get("created_at"),
             });
         }
