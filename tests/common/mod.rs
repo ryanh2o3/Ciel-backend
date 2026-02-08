@@ -185,7 +185,8 @@ impl TestApp {
         std::env::set_var("PASETO_REFRESH_KEY", TEST_PASETO_REFRESH_KEY);
         std::env::set_var("ADMIN_TOKEN", TEST_ADMIN_TOKEN);
         std::env::set_var("APP_MODE", "api");
-        std::env::set_var("DB_MAX_CONNECTIONS", "50");
+        std::env::set_var("DB_MAX_CONNECTIONS", "10");
+        std::env::set_var("DB_CONNECT_TIMEOUT_SECONDS", "30");
         std::env::set_var("AWS_ACCESS_KEY_ID", "test");
         std::env::set_var("AWS_SECRET_ACCESS_KEY", "test");
         std::env::set_var("AWS_DEFAULT_REGION", "us-east-1");
