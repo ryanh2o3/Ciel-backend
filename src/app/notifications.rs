@@ -1,4 +1,5 @@
 use anyhow::Result;
+use serde_json::Value;
 use sqlx::Row;
 use time::OffsetDateTime;
 use uuid::Uuid;
@@ -14,6 +15,59 @@ pub struct NotificationService {
 impl NotificationService {
     pub fn new(db: Db) -> Self {
         Self { db }
+    }
+
+    pub async fn create(
+        &self,
+        user_id: Uuid,
+        notification_type: &str,
+        payload: Value,
+    ) -> Result<()> {
+        sqlx::query(
+            "INSERT INTO notifications (user_id, notification_type, payload) \
+             VALUES ($1, $2, $3)",
+        )
+        .bind(user_id)
+        .bind(notification_type)
+        .bind(payload)
+        .execute(self.db.pool())
+        .await?;
+
+        Ok(())
+    }
+
+    /// Creates a notification only if actor != recipient.
+    /// Looks up actor handle/display_name and merges into payload.
+    pub async fn create_if_not_self(
+        &self,
+        recipient_id: Uuid,
+        actor_id: Uuid,
+        notification_type: &str,
+        mut payload: Value,
+    ) -> Result<()> {
+        if actor_id == recipient_id {
+            return Ok(());
+        }
+
+        // Look up actor info
+        let actor_row = sqlx::query(
+            "SELECT handle, display_name FROM users WHERE id = $1",
+        )
+        .bind(actor_id)
+        .fetch_optional(self.db.pool())
+        .await?;
+
+        if let Some(row) = actor_row {
+            let handle: String = row.get("handle");
+            let display_name: String = row.get("display_name");
+            if let Some(obj) = payload.as_object_mut() {
+                obj.insert("actor_id".to_string(), Value::String(actor_id.to_string()));
+                obj.insert("actor_handle".to_string(), Value::String(handle));
+                obj.insert("actor_display_name".to_string(), Value::String(display_name));
+            }
+        }
+
+        self.create(recipient_id, notification_type, payload).await
     }
 
     pub async fn list(

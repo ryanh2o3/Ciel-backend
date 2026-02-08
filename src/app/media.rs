@@ -1,5 +1,6 @@
 use anyhow::{anyhow, Result};
 use aws_sdk_s3::presigning::PresigningConfig;
+use redis::AsyncCommands;
 use serde::Serialize;
 use sqlx::Row;
 use std::time::Duration;
@@ -7,12 +8,13 @@ use uuid::Uuid;
 use url::Url;
 
 use crate::domain::media::Media;
-use crate::infra::{db::Db, queue::QueueClient, storage::ObjectStorage};
+use crate::infra::{cache::RedisCache, db::Db, queue::QueueClient, storage::ObjectStorage};
 use crate::jobs::media_processor::MediaJob;
 
 #[derive(Clone)]
 pub struct MediaService {
     db: Db,
+    cache: RedisCache,
     storage: ObjectStorage,
     queue: QueueClient,
     s3_public_endpoint: Option<String>,
@@ -40,8 +42,8 @@ pub struct UploadStatus {
 }
 
 impl MediaService {
-    pub fn new(db: Db, storage: ObjectStorage, queue: QueueClient, s3_public_endpoint: Option<String>) -> Self {
-        Self { db, storage, queue, s3_public_endpoint }
+    pub fn new(db: Db, cache: RedisCache, storage: ObjectStorage, queue: QueueClient, s3_public_endpoint: Option<String>) -> Self {
+        Self { db, cache, storage, queue, s3_public_endpoint }
     }
 
     pub async fn create_upload(
@@ -370,17 +372,26 @@ impl MediaService {
     }
 
     /// Generate a presigned GET URL for any object key (e.g., avatars)
-    /// Returns None if the key is None or URL generation fails
+    /// Returns None if the key is None or URL generation fails.
+    /// Results are cached in Redis to avoid repeated S3 presign calls.
     pub async fn generate_presigned_get_url(
         &self,
         object_key: Option<&str>,
         expires_in_seconds: u64,
     ) -> Option<String> {
         let key = object_key?;
-        
+        let cache_key = format!("presigned:{}", key);
+
+        // Check Redis cache first
+        if let Ok(mut conn) = self.cache.client().get_multiplexed_async_connection().await {
+            if let Ok(Some(cached)) = conn.get::<_, Option<String>>(&cache_key).await {
+                return Some(cached);
+            }
+        }
+
         let presign_config = PresigningConfig::expires_in(Duration::from_secs(expires_in_seconds))
             .ok()?;
-        
+
         let presigned = self
             .storage
             .client()
@@ -390,16 +401,24 @@ impl MediaService {
             .presigned(presign_config)
             .await
             .ok()?;
-        
+
         let mut url = presigned.uri().to_string();
-        
+
         // Rewrite to public endpoint if configured
         if let Some(ref public_endpoint) = self.s3_public_endpoint {
             if let Ok(rewritten) = rewrite_presigned_url(&url, public_endpoint) {
                 url = rewritten;
             }
         }
-        
+
+        // Cache with TTL = expires_in - 5 minutes safety margin
+        let cache_ttl = expires_in_seconds.saturating_sub(300);
+        if cache_ttl > 0 {
+            if let Ok(mut conn) = self.cache.client().get_multiplexed_async_connection().await {
+                let _ = conn.set_ex::<_, _, ()>(&cache_key, &url, cache_ttl).await;
+            }
+        }
+
         Some(url)
     }
 
@@ -409,6 +428,51 @@ impl MediaService {
             user.avatar_url = self
                 .generate_presigned_get_url(user.avatar_key.as_deref(), 14400)
                 .await;
+        }
+    }
+
+    /// Populate user_avatar_url for stories from user_avatar_key
+    pub async fn populate_story_avatar_urls(&self, stories: &mut [crate::domain::story::Story]) {
+        let futures: Vec<_> = stories
+            .iter()
+            .enumerate()
+            .filter(|(_, s)| s.user_avatar_key.is_some())
+            .map(|(i, s)| {
+                let key = s.user_avatar_key.as_deref().map(|k| k.to_string());
+                async move {
+                    let url = self.generate_presigned_get_url(key.as_deref(), 14400).await;
+                    (i, url)
+                }
+            })
+            .collect();
+
+        let results = futures::future::join_all(futures).await;
+        for (i, url) in results {
+            stories[i].user_avatar_url = url;
+        }
+    }
+
+    /// Populate viewer_avatar_url for story views from viewer_avatar_key
+    pub async fn populate_story_view_avatar_urls(
+        &self,
+        views: &mut [crate::domain::story::StoryView],
+    ) {
+        let futures: Vec<_> = views
+            .iter()
+            .enumerate()
+            .filter(|(_, v)| v.viewer_avatar_key.is_some())
+            .map(|(i, v)| {
+                let key = v.viewer_avatar_key.as_deref().map(|k| k.to_string());
+                async move {
+                    let url = self.generate_presigned_get_url(key.as_deref(), 14400).await;
+                    (i, url)
+                }
+            })
+            .collect();
+
+        let results = futures::future::join_all(futures).await;
+        for (i, url) in results {
+            views[i].viewer_avatar_url = url;
         }
     }
 
@@ -445,8 +509,11 @@ fn extension_from_content_type(content_type: &str) -> Result<&'static str> {
 
 fn rewrite_presigned_url(original: &str, public_endpoint: &str) -> Result<String> {
     let mut original_url = Url::parse(original)?;
-    let public_url = Url::parse(public_endpoint)
-        .or_else(|_| Url::parse(&format!("http://{}", public_endpoint)))?;
+    let public_url = if public_endpoint.contains("://") {
+        Url::parse(public_endpoint)?
+    } else {
+        Url::parse(&format!("http://{}", public_endpoint))?
+    };
 
     original_url
         .set_scheme(public_url.scheme())

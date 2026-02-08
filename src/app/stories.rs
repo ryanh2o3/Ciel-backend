@@ -63,7 +63,8 @@ impl StoryService {
                 RETURNING id, user_id, media_id, caption, created_at, expires_at, \
                          visibility::text AS visibility, view_count, reaction_count \
              ) \
-             SELECT s.*, u.handle AS user_handle, u.display_name AS user_display_name \
+             SELECT s.*, u.handle AS user_handle, u.display_name AS user_display_name, \
+                           u.avatar_key AS user_avatar_key \
              FROM inserted s \
              JOIN users u ON s.user_id = u.id AND u.deleted_at IS NULL",
         )
@@ -90,6 +91,7 @@ impl StoryService {
             Some((created_at, story_id)) => {
                 sqlx::query(
                     "SELECT s.id, s.user_id, u.handle AS user_handle, u.display_name AS user_display_name, \
+                           u.avatar_key AS user_avatar_key, \
                             s.media_id, s.caption, s.created_at, s.expires_at, \
                             s.visibility::text AS visibility, s.view_count, s.reaction_count \
                      FROM stories s \
@@ -122,6 +124,7 @@ impl StoryService {
             None => {
                 sqlx::query(
                     "SELECT s.id, s.user_id, u.handle AS user_handle, u.display_name AS user_display_name, \
+                           u.avatar_key AS user_avatar_key, \
                             s.media_id, s.caption, s.created_at, s.expires_at, \
                             s.visibility::text AS visibility, s.view_count, s.reaction_count \
                      FROM stories s \
@@ -157,6 +160,7 @@ impl StoryService {
         let now = OffsetDateTime::now_utc();
         let row = sqlx::query(
             "SELECT s.id, s.user_id, u.handle AS user_handle, u.display_name AS user_display_name, \
+                           u.avatar_key AS user_avatar_key, \
                     s.media_id, s.caption, s.created_at, s.expires_at, \
                     s.visibility::text AS visibility, s.view_count, s.reaction_count \
              FROM stories s \
@@ -344,7 +348,8 @@ impl StoryService {
             Some((viewed_at, viewer_id)) => {
                 sqlx::query(
                     "SELECT v.viewer_id, u.handle AS viewer_handle, \
-                            u.display_name AS viewer_display_name, v.viewed_at \
+                            u.display_name AS viewer_display_name, \
+                            u.avatar_key AS viewer_avatar_key, v.viewed_at \
                      FROM story_views v \
                      JOIN users u ON v.viewer_id = u.id AND u.deleted_at IS NULL \
                      WHERE v.story_id = $1 \
@@ -362,7 +367,8 @@ impl StoryService {
             None => {
                 sqlx::query(
                     "SELECT v.viewer_id, u.handle AS viewer_handle, \
-                            u.display_name AS viewer_display_name, v.viewed_at \
+                            u.display_name AS viewer_display_name, \
+                            u.avatar_key AS viewer_avatar_key, v.viewed_at \
                      FROM story_views v \
                      JOIN users u ON v.viewer_id = u.id AND u.deleted_at IS NULL \
                      WHERE v.story_id = $1 \
@@ -382,6 +388,8 @@ impl StoryService {
                 viewer_id: row.get("viewer_id"),
                 viewer_handle: Some(row.get("viewer_handle")),
                 viewer_display_name: Some(row.get("viewer_display_name")),
+                viewer_avatar_key: row.get("viewer_avatar_key"),
+                viewer_avatar_url: None,
                 viewed_at: row.get("viewed_at"),
             });
         }
@@ -596,6 +604,7 @@ impl StoryService {
             Some((created_at, story_id)) => {
                 sqlx::query(
                     "SELECT s.id, s.user_id, u.handle AS user_handle, u.display_name AS user_display_name, \
+                           u.avatar_key AS user_avatar_key, \
                             s.media_id, s.caption, s.created_at, s.expires_at, \
                             s.visibility::text AS visibility, s.view_count, s.reaction_count \
                      FROM stories s \
@@ -625,6 +634,7 @@ impl StoryService {
             None => {
                 sqlx::query(
                     "SELECT s.id, s.user_id, u.handle AS user_handle, u.display_name AS user_display_name, \
+                           u.avatar_key AS user_avatar_key, \
                             s.media_id, s.caption, s.created_at, s.expires_at, \
                             s.visibility::text AS visibility, s.view_count, s.reaction_count \
                      FROM stories s \
@@ -682,6 +692,8 @@ fn row_to_story(row: &PgRow) -> Result<Story> {
         user_id: row.get("user_id"),
         user_handle: Some(row.get("user_handle")),
         user_display_name: Some(row.get("user_display_name")),
+        user_avatar_key: row.get("user_avatar_key"),
+        user_avatar_url: None,
         media_id: row.get("media_id"),
         caption: row.get("caption"),
         created_at: row.get("created_at"),

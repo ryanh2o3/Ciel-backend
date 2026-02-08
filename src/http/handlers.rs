@@ -4,6 +4,7 @@ use axum::{
     Json,
 };
 use serde::{Deserialize, Serialize};
+use sqlx::Row;
 use time::format_description::well_known::Rfc3339;
 use time::OffsetDateTime;
 use uuid::Uuid;
@@ -248,6 +249,7 @@ pub async fn get_current_user(
         Some(mut user) => {
             let media_svc = MediaService::new(
                 state.db.clone(),
+                state.cache.clone(),
                 state.storage.clone(),
                 state.queue.clone(),
                 state.s3_public_endpoint.clone(),
@@ -273,6 +275,7 @@ pub async fn get_user(
         Some(mut user) => {
             let media_svc = MediaService::new(
                 state.db.clone(),
+                state.cache.clone(),
                 state.storage.clone(),
                 state.queue.clone(),
                 state.s3_public_endpoint.clone(),
@@ -390,6 +393,7 @@ pub async fn create_user(
     let mut user = user;
     let media_svc = MediaService::new(
         state.db.clone(),
+        state.cache.clone(),
         state.storage.clone(),
         state.queue.clone(),
         state.s3_public_endpoint.clone(),
@@ -443,6 +447,7 @@ pub async fn update_profile(
         Some(mut user) => {
             let media_svc = MediaService::new(
                 state.db.clone(),
+                state.cache.clone(),
                 state.storage.clone(),
                 state.queue.clone(),
                 state.s3_public_endpoint.clone(),
@@ -530,6 +535,23 @@ pub async fn follow_user(
         tracing::error!(error = ?err, follower_id = %auth.user_id, followee_id = %id, "failed to follow user");
         AppError::internal("failed to follow user")
     })?;
+
+    // Fire-and-forget notification for new follows
+    if followed {
+        let db = state.db.clone();
+        let actor_id = auth.user_id;
+        let followee_id = id;
+        tokio::spawn(async move {
+            let notif_svc = NotificationService::new(db);
+            let payload = serde_json::json!({});
+            if let Err(err) = notif_svc
+                .create_if_not_self(followee_id, actor_id, "user_followed", payload)
+                .await
+            {
+                tracing::warn!(error = ?err, "failed to create follow notification");
+            }
+        });
+    }
 
     Ok(Json(FollowResponse { followed }))
 }
@@ -863,6 +885,31 @@ pub async fn like_post(
             AppError::internal("failed to like post")
         })?;
 
+    // Fire-and-forget notification for new likes
+    if like.is_some() {
+        let db = state.db.clone();
+        let actor_id = auth.user_id;
+        let post_id = id;
+        tokio::spawn(async move {
+            let notif_svc = NotificationService::new(db.clone());
+            // Look up post owner
+            let owner_row = sqlx::query("SELECT user_id FROM posts WHERE id = $1")
+                .bind(post_id)
+                .fetch_optional(db.pool())
+                .await;
+            if let Ok(Some(row)) = owner_row {
+                let owner_id: Uuid = row.get("user_id");
+                let payload = serde_json::json!({ "post_id": post_id.to_string() });
+                if let Err(err) = notif_svc
+                    .create_if_not_self(owner_id, actor_id, "post_liked", payload)
+                    .await
+                {
+                    tracing::warn!(error = ?err, "failed to create like notification");
+                }
+            }
+        });
+    }
+
     Ok(Json(LikeResponse {
         created: like.is_some(),
     }))
@@ -946,6 +993,7 @@ pub async fn comment_post(
         return Err(AppError::bad_request("comment body exceeds 1000 characters"));
     }
 
+    let comment_body = payload.body.clone();
     let service = EngagementService::new(state.db.clone());
     let comment = service
         .comment_post(auth.user_id, id, payload.body)
@@ -954,6 +1002,34 @@ pub async fn comment_post(
             tracing::error!(error = ?err, user_id = %auth.user_id, post_id = %id, "failed to comment");
             AppError::internal("failed to comment")
         })?;
+
+    // Fire-and-forget notification for new comments
+    {
+        let db = state.db.clone();
+        let actor_id = auth.user_id;
+        let post_id = id;
+        let preview: String = comment_body.chars().take(100).collect();
+        tokio::spawn(async move {
+            let notif_svc = NotificationService::new(db.clone());
+            let owner_row = sqlx::query("SELECT user_id FROM posts WHERE id = $1")
+                .bind(post_id)
+                .fetch_optional(db.pool())
+                .await;
+            if let Ok(Some(row)) = owner_row {
+                let owner_id: Uuid = row.get("user_id");
+                let payload = serde_json::json!({
+                    "post_id": post_id.to_string(),
+                    "comment_preview": preview,
+                });
+                if let Err(err) = notif_svc
+                    .create_if_not_self(owner_id, actor_id, "post_commented", payload)
+                    .await
+                {
+                    tracing::warn!(error = ?err, "failed to create comment notification");
+                }
+            }
+        });
+    }
 
     Ok(Json(comment))
 }
@@ -1073,6 +1149,7 @@ pub async fn create_upload(
 
     let service = crate::app::media::MediaService::new(
         state.db.clone(),
+        state.cache.clone(),
         state.storage.clone(),
         state.queue.clone(),
         state.s3_public_endpoint.clone(),
@@ -1101,6 +1178,7 @@ pub async fn complete_upload(
 ) -> Result<StatusCode, AppError> {
     let service = crate::app::media::MediaService::new(
         state.db.clone(),
+        state.cache.clone(),
         state.storage.clone(),
         state.queue.clone(),
         state.s3_public_endpoint.clone(),
@@ -1126,7 +1204,7 @@ pub async fn get_media(
     Path(id): Path<Uuid>,
     State(state): State<AppState>,
 ) -> Result<Json<crate::domain::media::Media>, AppError> {
-    let service = MediaService::new(state.db.clone(), state.storage.clone(), state.queue.clone(), state.s3_public_endpoint.clone());
+    let service = MediaService::new(state.db.clone(), state.cache.clone(), state.storage.clone(), state.queue.clone(), state.s3_public_endpoint.clone());
     let media = service.get_media_for_user(id, auth.user_id).await.map_err(|err| {
         tracing::error!(error = ?err, media_id = %id, "failed to fetch media");
         AppError::internal("failed to fetch media")
@@ -1143,7 +1221,7 @@ pub async fn get_upload_status(
     Path(id): Path<Uuid>,
     State(state): State<AppState>,
 ) -> Result<Json<UploadStatus>, AppError> {
-    let service = MediaService::new(state.db.clone(), state.storage.clone(), state.queue.clone(), state.s3_public_endpoint.clone());
+    let service = MediaService::new(state.db.clone(), state.cache.clone(), state.storage.clone(), state.queue.clone(), state.s3_public_endpoint.clone());
     let status = service
         .get_upload_status(id, auth.user_id)
         .await
@@ -1163,7 +1241,7 @@ pub async fn delete_media(
     Path(id): Path<Uuid>,
     State(state): State<AppState>,
 ) -> Result<StatusCode, AppError> {
-    let service = MediaService::new(state.db.clone(), state.storage.clone(), state.queue.clone(), state.s3_public_endpoint.clone());
+    let service = MediaService::new(state.db.clone(), state.cache.clone(), state.storage.clone(), state.queue.clone(), state.s3_public_endpoint.clone());
     let deleted = service
         .delete_media(id, auth.user_id)
         .await
@@ -1370,6 +1448,15 @@ pub async fn search_users(
     } else {
         None
     };
+
+    let media_svc = MediaService::new(
+        state.db.clone(),
+        state.cache.clone(),
+        state.storage.clone(),
+        state.queue.clone(),
+        state.s3_public_endpoint.clone(),
+    );
+    media_svc.populate_users_avatar_urls(&mut users).await;
 
     let items = users.into_iter().map(crate::domain::user::PublicUser::from).collect();
 
@@ -1760,6 +1847,12 @@ pub async fn create_story(
             AppError::internal("failed to create story")
         })?;
 
+    let media_svc = crate::app::media::MediaService::new(
+        state.db.clone(), state.cache.clone(), state.storage.clone(), state.queue.clone(), state.s3_public_endpoint.clone(),
+    );
+    let mut story = story;
+    media_svc.populate_story_avatar_urls(std::slice::from_mut(&mut story)).await;
+
     Ok(Json(story))
 }
 
@@ -1791,6 +1884,11 @@ pub async fn get_user_stories(
         None
     };
 
+    let media_svc = crate::app::media::MediaService::new(
+        state.db.clone(), state.cache.clone(), state.storage.clone(), state.queue.clone(), state.s3_public_endpoint.clone(),
+    );
+    media_svc.populate_story_avatar_urls(&mut stories).await;
+
     Ok(Json(ListResponse {
         items: stories,
         next_cursor: encode_cursor(next_cursor),
@@ -1813,7 +1911,13 @@ pub async fn get_story(
         })?;
 
     match story {
-        Some(story) => Ok(Json(story)),
+        Some(mut story) => {
+            let media_svc = crate::app::media::MediaService::new(
+                state.db.clone(), state.cache.clone(), state.storage.clone(), state.queue.clone(), state.s3_public_endpoint.clone(),
+            );
+            media_svc.populate_story_avatar_urls(std::slice::from_mut(&mut story)).await;
+            Ok(Json(story))
+        }
         None => Err(AppError::not_found("story not found")),
     }
 }
@@ -1883,6 +1987,11 @@ pub async fn get_story_viewers(
         None
     };
 
+    let media_svc = crate::app::media::MediaService::new(
+        state.db.clone(), state.cache.clone(), state.storage.clone(), state.queue.clone(), state.s3_public_endpoint.clone(),
+    );
+    media_svc.populate_story_view_avatar_urls(&mut viewers).await;
+
     Ok(Json(ListResponse {
         items: viewers,
         next_cursor: encode_cursor(next_cursor),
@@ -1908,10 +2017,11 @@ pub async fn add_story_reaction(
         return Err(AppError::bad_request("emoji must be at most 7 characters"));
     }
 
+    let emoji_str = emoji.to_string();
     let service =
         crate::app::stories::StoryService::new(state.db.clone(), state.cache.clone());
     let reaction = service
-        .add_reaction(id, auth.user_id, emoji.to_string())
+        .add_reaction(id, auth.user_id, emoji_str.clone())
         .await
         .map_err(|err| {
             if let Some(sqlx_err) = err.downcast_ref::<sqlx::Error>() {
@@ -1926,6 +2036,33 @@ pub async fn add_story_reaction(
             tracing::error!(error = ?err, story_id = %id, user_id = %auth.user_id, "failed to add reaction");
             AppError::internal("failed to add reaction")
         })?;
+
+    // Fire-and-forget notification for story reactions
+    {
+        let db = state.db.clone();
+        let actor_id = auth.user_id;
+        let story_id = id;
+        tokio::spawn(async move {
+            let notif_svc = NotificationService::new(db.clone());
+            let owner_row = sqlx::query("SELECT user_id FROM stories WHERE id = $1")
+                .bind(story_id)
+                .fetch_optional(db.pool())
+                .await;
+            if let Ok(Some(row)) = owner_row {
+                let owner_id: Uuid = row.get("user_id");
+                let payload = serde_json::json!({
+                    "story_id": story_id.to_string(),
+                    "emoji": emoji_str,
+                });
+                if let Err(err) = notif_svc
+                    .create_if_not_self(owner_id, actor_id, "story_reaction", payload)
+                    .await
+                {
+                    tracing::warn!(error = ?err, "failed to create story reaction notification");
+                }
+            }
+        });
+    }
 
     Ok(Json(reaction))
 }
@@ -2051,6 +2188,11 @@ pub async fn get_stories_feed(
     } else {
         None
     };
+
+    let media_svc = crate::app::media::MediaService::new(
+        state.db.clone(), state.cache.clone(), state.storage.clone(), state.queue.clone(), state.s3_public_endpoint.clone(),
+    );
+    media_svc.populate_story_avatar_urls(&mut stories).await;
 
     Ok(Json(ListResponse {
         items: stories,

@@ -8,6 +8,10 @@ pub struct Story {
     pub user_id: Uuid,
     pub user_handle: Option<String>,
     pub user_display_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub user_avatar_key: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub user_avatar_url: Option<String>,
     pub media_id: Uuid,
     pub caption: Option<String>,
     #[serde(with = "time::serde::rfc3339")]
@@ -61,6 +65,10 @@ pub struct StoryView {
     pub viewer_id: Uuid,
     pub viewer_handle: Option<String>,
     pub viewer_display_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub viewer_avatar_key: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub viewer_avatar_url: Option<String>,
     #[serde(with = "time::serde::rfc3339")]
     pub viewed_at: OffsetDateTime,
 }
