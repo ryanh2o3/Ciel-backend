@@ -2,9 +2,9 @@ output "redis_host" {
   description = "Redis host address"
   value = !var.enabled ? null : (
     var.use_managed_redis ? (
-      length(scaleway_redis_cluster.main) > 0 ? scaleway_redis_cluster.main[0].private_network[0].endpoint_id : null
+      length(scaleway_redis_cluster.main) > 0 ? one([for pn in scaleway_redis_cluster.main[0].private_network : pn.endpoint_id]) : null
     ) : (
-      length(scaleway_instance_server.redis) > 0 ? scaleway_instance_server.redis[0].private_ip : null
+      length(scaleway_instance_server.redis) > 0 ? try(scaleway_instance_server.redis[0].private_ips[0].address, null) : null
     )
   )
 }
@@ -20,12 +20,12 @@ output "redis_url" {
     var.use_managed_redis ? (
       length(scaleway_redis_cluster.main) > 0 ? (
         var.managed_redis_tls_enabled ?
-          "rediss://:${var.redis_password}@${scaleway_redis_cluster.main[0].private_network[0].endpoint_id}:6379" :
-          "redis://:${var.redis_password}@${scaleway_redis_cluster.main[0].private_network[0].endpoint_id}:6379"
+          "rediss://:${var.redis_password}@${one([for pn in scaleway_redis_cluster.main[0].private_network : pn.endpoint_id])}:6379" :
+          "redis://:${var.redis_password}@${one([for pn in scaleway_redis_cluster.main[0].private_network : pn.endpoint_id])}:6379"
       ) : null
     ) : (
       length(scaleway_instance_server.redis) > 0 ?
-        "redis://:${var.redis_password}@${scaleway_instance_server.redis[0].private_ip}:6379" : null
+        "redis://:${var.redis_password}@${try(scaleway_instance_server.redis[0].private_ips[0].address, "")}:6379" : null
     )
   )
   sensitive = true

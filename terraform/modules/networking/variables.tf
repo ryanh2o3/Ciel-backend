@@ -104,6 +104,18 @@ variable "health_check_path" {
   default     = "/health"
 }
 
+variable "backend_server_ips" {
+  description = "List of backend server IPs to register with the load balancer"
+  type        = list(string)
+  default     = []
+}
+
+variable "reverse_dns_hostname" {
+  description = "Hostname for reverse DNS on the public gateway IP (e.g., api.ciel-social.eu)"
+  type        = string
+  default     = null
+}
+
 variable "tags" {
   description = "Tags to apply to resources"
   type        = list(string)

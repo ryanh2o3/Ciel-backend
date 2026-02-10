@@ -36,7 +36,7 @@ resource "scaleway_mnq_sqs_queue" "dlq" {
   access_key         = scaleway_mnq_sqs_credentials.main.access_key
   secret_key         = scaleway_mnq_sqs_credentials.main.secret_key
 
-  message_retention_seconds = var.dlq_retention_seconds
+  message_max_age            = var.dlq_retention_seconds
   visibility_timeout_seconds = 30
 
   depends_on = [scaleway_mnq_sqs_credentials.main]
@@ -52,17 +52,17 @@ resource "scaleway_mnq_sqs_queue" "main" {
   access_key   = scaleway_mnq_sqs_credentials.main.access_key
   secret_key   = scaleway_mnq_sqs_credentials.main.secret_key
 
-  message_retention_seconds   = var.message_retention_seconds
+  message_max_age             = var.message_retention_seconds
   visibility_timeout_seconds  = var.visibility_timeout
   receive_wait_time_seconds   = var.receive_wait_time
 
-  redrive_policy = var.enable_dlq ? jsonencode({
-    deadLetterTargetArn = scaleway_mnq_sqs_queue.dlq[0].arn
-    maxReceiveCount     = var.dlq_max_receive_count
-  }) : null
-
-  # Content-based deduplication is not supported by Scaleway MNQ
-  # but FIFO queues are also not supported, so this is fine
+  dynamic "dead_letter_queue" {
+    for_each = var.enable_dlq ? [1] : []
+    content {
+      id                = scaleway_mnq_sqs_queue.dlq[0].id
+      max_receive_count = var.dlq_max_receive_count
+    }
+  }
 
   depends_on = [scaleway_mnq_sqs_credentials.main]
 }

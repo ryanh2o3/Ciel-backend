@@ -36,11 +36,12 @@ resource "scaleway_vpc_public_gateway_ip" "main" {
   tags = concat(var.tags, ["environment:${var.environment}"])
 }
 
-# Connect gateway to IP
+# Connect gateway to IP (reverse DNS)
 resource "scaleway_vpc_public_gateway_ip_reverse_dns" "main" {
-  count = var.enable_public_gateway ? 1 : 0
+  count = var.enable_public_gateway && var.reverse_dns_hostname != null ? 1 : 0
 
   gateway_ip_id = scaleway_vpc_public_gateway_ip.main[0].id
+  reverse       = var.reverse_dns_hostname
   zone          = var.zone
 }
 
@@ -181,8 +182,10 @@ resource "scaleway_lb_backend" "api" {
 
   lb_id            = scaleway_lb.api[0].id
   name             = "${var.app_name}-backend-${var.environment}"
-  forward_protocol = "https"
+  forward_protocol = "http"
+  ssl_bridging     = true
   forward_port     = 8443
+  server_ips       = var.backend_server_ips
 
   health_check_http {
     uri    = var.health_check_path
@@ -198,7 +201,7 @@ resource "scaleway_lb_backend" "api" {
   sticky_sessions_cookie_name = "ciel_session"
 }
 
-# Load Balancer Frontend - HTTP (redirects to HTTPS)
+# Load Balancer Frontend - HTTP (redirects to HTTPS via ACL)
 resource "scaleway_lb_frontend" "http" {
   count = var.enable_load_balancer ? 1 : 0
 
@@ -206,7 +209,28 @@ resource "scaleway_lb_frontend" "http" {
   backend_id   = scaleway_lb_backend.api[0].id
   name         = "${var.app_name}-http-${var.environment}"
   inbound_port = 80
-  redirect_http_to_https = true
+}
+
+resource "scaleway_lb_acl" "http_to_https_redirect" {
+  count = var.enable_load_balancer && length(var.ssl_certificate_ids) > 0 ? 1 : 0
+
+  frontend_id = scaleway_lb_frontend.http[0].id
+  name        = "${var.app_name}-http-redirect-${var.environment}"
+  index       = 1
+
+  action {
+    type = "redirect"
+    redirect {
+      type   = "scheme"
+      target = "https"
+      code   = 301
+    }
+  }
+
+  match {
+    http_filter       = "path_begin"
+    http_filter_value = ["*"]
+  }
 }
 
 # Load Balancer Frontend - HTTPS
@@ -231,13 +255,14 @@ resource "scaleway_lb_acl" "blocked_ips" {
 
   frontend_id = local.lb_frontend_id
   name        = "${var.app_name}-block-${count.index}-${var.environment}"
+  index       = count.index + 1
 
   action {
     type = "deny"
   }
 
   match {
-    ip_subnet = var.blocked_ip_ranges[count.index]
+    ip_subnet = [var.blocked_ip_ranges[count.index]]
   }
 }
 

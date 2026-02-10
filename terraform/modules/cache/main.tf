@@ -39,6 +39,7 @@ resource "scaleway_redis_cluster" "main" {
   name         = "${var.app_name}-redis-${var.environment}"
   version      = var.managed_redis_version
   node_type    = var.managed_redis_node_type
+  user_name    = "${var.app_name}_${var.environment}"
   cluster_size = var.managed_redis_cluster_size
   zone         = var.zone
   tls_enabled  = var.managed_redis_tls_enabled

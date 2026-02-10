@@ -233,6 +233,7 @@ module "dns" {
   api_subdomain    = "api"
   cdn_subdomain    = "media"
   load_balancer_ip = module.networking.load_balancer_ip
+  load_balancer_id = module.networking.load_balancer_id
   cdn_endpoint     = module.storage.cdn_endpoint
 
   # Production-specific settings

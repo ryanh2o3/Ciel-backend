@@ -19,15 +19,15 @@ output "api_instance_ids" {
 output "api_instance_ips" {
   description = "API instance private IPs"
   value = var.enable_combined_mode ? (
-    scaleway_instance_server.combined[*].private_ip
-  ) : scaleway_instance_server.api[*].private_ip
+    [for s in scaleway_instance_server.combined : try(s.private_ips[0].address, null)]
+  ) : [for s in scaleway_instance_server.api : try(s.private_ips[0].address, null)]
 }
 
 output "api_instance_public_ips" {
   description = "API instance public IPs (if assigned)"
   value = var.enable_combined_mode ? (
-    scaleway_instance_server.combined[*].public_ip
-  ) : scaleway_instance_server.api[*].public_ip
+    [for s in scaleway_instance_server.combined : try(s.public_ips[0].address, null)]
+  ) : [for s in scaleway_instance_server.api : try(s.public_ips[0].address, null)]
 }
 
 output "worker_instance_ids" {
@@ -37,7 +37,7 @@ output "worker_instance_ids" {
 
 output "worker_instance_ips" {
   description = "Polling worker instance private IPs (empty when using serverless worker)"
-  value       = scaleway_instance_server.worker[*].private_ip
+  value       = [for s in scaleway_instance_server.worker : try(s.private_ips[0].address, null)]
 }
 
 # Serverless worker outputs

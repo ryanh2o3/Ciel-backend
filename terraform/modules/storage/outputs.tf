@@ -47,13 +47,12 @@ output "iam_application_id" {
 
 output "cdn_setup_notes" {
   description = "Notes for CDN setup"
-  value       = var.enable_cdn ? <<-EOT
-    CDN Setup Instructions:
-    1. Go to Scaleway Console > Edge Services
-    2. Create a new pipeline for bucket: ${scaleway_object_bucket.media.name}
-    3. Configure caching rules for /processed/* prefix
-    4. Optionally add custom domain: ${var.cdn_custom_domain != null ? var.cdn_custom_domain : "(not configured)"}
-    5. Update S3_PUBLIC_ENDPOINT env var with CDN URL
-  EOT
-  : "CDN disabled"
+  value = var.enable_cdn ? join("\n", [
+    "CDN Setup Instructions:",
+    "1. Go to Scaleway Console > Edge Services",
+    "2. Create a new pipeline for bucket: ${scaleway_object_bucket.media.name}",
+    "3. Configure caching rules for /processed/* prefix",
+    "4. Optionally add custom domain: ${var.cdn_custom_domain != null ? var.cdn_custom_domain : "(not configured)"}",
+    "5. Update S3_PUBLIC_ENDPOINT env var with CDN URL",
+  ]) : "CDN disabled"
 }

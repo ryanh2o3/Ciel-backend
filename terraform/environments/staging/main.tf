@@ -232,6 +232,7 @@ module "dns" {
   api_subdomain    = "staging-api"
   cdn_subdomain    = "staging-media"
   load_balancer_ip = module.networking.load_balancer_ip
+  load_balancer_id = module.networking.load_balancer_id
   cdn_endpoint     = module.storage.cdn_endpoint
 
   # Staging-specific settings

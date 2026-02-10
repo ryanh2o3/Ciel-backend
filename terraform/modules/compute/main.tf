@@ -208,22 +208,6 @@ resource "scaleway_instance_server" "combined" {
   }
 }
 
-# Register API instances with load balancer (multi-instance mode)
-resource "scaleway_lb_backend_server" "api" {
-  count = !var.enable_combined_mode && var.load_balancer_backend_id != null ? var.api_instance_count : 0
-
-  backend_id = var.load_balancer_backend_id
-  ip         = scaleway_instance_server.api[count.index].private_ip
-}
-
-# Register combined instance with load balancer (if LB enabled)
-resource "scaleway_lb_backend_server" "combined" {
-  count = var.enable_combined_mode && var.load_balancer_backend_id != null ? 1 : 0
-
-  backend_id = var.load_balancer_backend_id
-  ip         = scaleway_instance_server.combined[0].private_ip
-}
-
 # Worker Instances (legacy polling mode — set count=0 to disable)
 resource "scaleway_instance_server" "worker" {
   count = var.worker_instance_count

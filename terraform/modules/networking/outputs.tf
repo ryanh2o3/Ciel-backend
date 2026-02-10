@@ -50,5 +50,5 @@ output "public_gateway_ip" {
 
 output "bastion_public_ip" {
   description = "Bastion host public IP"
-  value       = var.enable_bastion ? scaleway_instance_server.bastion[0].public_ip : null
+  value       = var.enable_bastion ? try(scaleway_instance_server.bastion[0].public_ips[0].address, null) : null
 }

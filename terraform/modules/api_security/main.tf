@@ -32,13 +32,14 @@ resource "scaleway_lb_acl" "blocked_ips" {
 
   frontend_id = local.api_gateway_frontend_id
   name        = "${var.app_name}-block-${count.index}-${var.environment}"
+  index       = count.index + 1
 
   action {
     type = "deny"
   }
 
   match {
-    ip_subnet = var.blocked_ip_ranges[count.index]
+    ip_subnet = [var.blocked_ip_ranges[count.index]]
   }
 }
 
@@ -54,7 +55,8 @@ resource "scaleway_lb_backend" "api_gateway" {
 
   lb_id            = scaleway_lb.api_gateway[0].id
   name             = "${var.app_name}-gateway-backend-${var.environment}"
-  forward_protocol = "https"
+  forward_protocol = "http"
+  ssl_bridging     = true
   forward_port     = 8443
 
   health_check_http {
@@ -71,7 +73,7 @@ resource "scaleway_lb_backend" "api_gateway" {
   sticky_sessions_cookie_name = "ciel_session"
 }
 
-# API Gateway Frontend - HTTP (redirects to HTTPS)
+# API Gateway Frontend - HTTP (redirects to HTTPS via ACL)
 resource "scaleway_lb_frontend" "http" {
   count = var.enable_api_gateway ? 1 : 0
 
@@ -79,7 +81,28 @@ resource "scaleway_lb_frontend" "http" {
   backend_id   = scaleway_lb_backend.api_gateway[0].id
   name         = "${var.app_name}-http-gateway-${var.environment}"
   inbound_port = 80
-  redirect_http_to_https = true
+}
+
+resource "scaleway_lb_acl" "http_to_https_redirect" {
+  count = var.enable_api_gateway && length(var.ssl_certificate_ids) > 0 ? 1 : 0
+
+  frontend_id = scaleway_lb_frontend.http[0].id
+  name        = "${var.app_name}-http-redirect-${var.environment}"
+  index       = 1
+
+  action {
+    type = "redirect"
+    redirect {
+      type   = "scheme"
+      target = "https"
+      code   = 301
+    }
+  }
+
+  match {
+    http_filter       = "path_begin"
+    http_filter_value = ["*"]
+  }
 }
 
 # API Gateway Frontend - HTTPS

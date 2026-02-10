@@ -53,10 +53,10 @@ resource "scaleway_cockpit_alert_manager" "main" {
 
   enable_managed_alerts = true
 
-  dynamic "contact_point" {
+  dynamic "contact_points" {
     for_each = var.alert_contact_emails
     content {
-      email = contact_point.value
+      email = contact_points.value
     }
   }
 

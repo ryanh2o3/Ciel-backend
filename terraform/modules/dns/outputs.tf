@@ -22,10 +22,10 @@ output "root_dns_record" {
 
 output "ssl_certificate_id" {
   description = "SSL certificate ID"
-  value       = var.enable_ssl ? scaleway_domain_certificate.ssl[0].id : null
+  value       = var.enable_ssl ? scaleway_lb_certificate.ssl[0].id : null
 }
 
 output "ssl_certificate_ids" {
   description = "List of SSL certificate IDs for load balancer"
-  value       = var.enable_ssl ? [scaleway_domain_certificate.ssl[0].id] : []
+  value       = var.enable_ssl ? [scaleway_lb_certificate.ssl[0].id] : []
 }

@@ -55,3 +55,9 @@ variable "enable_ssl" {
   type        = bool
   default     = true
 }
+
+variable "load_balancer_id" {
+  description = "Load balancer ID (required for SSL certificate provisioning)"
+  type        = string
+  default     = null
+}

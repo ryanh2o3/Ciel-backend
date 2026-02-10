@@ -49,30 +49,23 @@ resource "scaleway_domain_record" "root" {
   priority = null
 }
 
-# SSL Certificate for domain (using Let's Encrypt)
-resource "scaleway_domain_certificate" "ssl" {
+# SSL Certificate via Let's Encrypt (managed by Load Balancer)
+resource "scaleway_lb_certificate" "ssl" {
   count = var.enable_ssl ? 1 : 0
 
-  dns_zone = var.domain_name
-  type     = "lets_encrypt"
-  subject  = "*.${var.domain_name}"
-  subject_alternative_names = [
-    var.domain_name,
-    "www.${var.domain_name}",
-    "${var.api_subdomain}.${var.domain_name}",
-    "${var.cdn_subdomain}.${var.domain_name}"
-  ]
-  auto_renew = true
-}
+  lb_id = var.load_balancer_id
+  name  = "${var.domain_name}-cert"
 
-# DNS verification for SSL certificate
-resource "scaleway_domain_record" "ssl_verification" {
-  count = var.enable_ssl && length(scaleway_domain_certificate.ssl) > 0 ? 1 : 0
+  letsencrypt {
+    common_name = var.domain_name
+    subject_alternative_name = [
+      "www.${var.domain_name}",
+      "${var.api_subdomain}.${var.domain_name}",
+      "${var.cdn_subdomain}.${var.domain_name}",
+    ]
+  }
 
-  dns_zone = var.domain_name
-  name     = scaleway_domain_certificate.ssl[0].dns_challenge_record_name
-  type     = "TXT"
-  data     = scaleway_domain_certificate.ssl[0].dns_challenge_record_value
-  ttl      = 300
-  priority = null
+  lifecycle {
+    create_before_destroy = true
+  }
 }
