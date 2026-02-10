@@ -25,7 +25,7 @@ output "primary_endpoint" {
 
 output "read_endpoint" {
   description = "Read replica endpoint (first replica, host:port)"
-  value       = length(scaleway_rdb_read_replica.main) > 0 && length(scaleway_rdb_read_replica.main[0].private_network) > 0 ? "${scaleway_rdb_read_replica.main[0].private_network[0].ip}:${scaleway_rdb_read_replica.main[0].private_network[0].port}" : null
+  value       = try("${scaleway_rdb_read_replica.main[0].private_network[0].ip}:${scaleway_rdb_read_replica.main[0].private_network[0].port}", null)
 }
 
 output "database_name" {
