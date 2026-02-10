@@ -49,7 +49,7 @@ resource "scaleway_secret_version" "paseto_refresh_key" {
 
 # Admin Token Secret (optional)
 resource "scaleway_secret" "admin_token" {
-  count = var.admin_token != "" ? 1 : 0
+  count = var.admin_token != null && var.admin_token != "" ? 1 : 0
 
   name        = "${var.app_name}-admin-token-${var.environment}"
   description = "Admin API authentication token"
@@ -59,7 +59,7 @@ resource "scaleway_secret" "admin_token" {
 }
 
 resource "scaleway_secret_version" "admin_token" {
-  count = var.admin_token != "" ? 1 : 0
+  count = var.admin_token != null && var.admin_token != "" ? 1 : 0
 
   secret_id = scaleway_secret.admin_token[0].id
   data      = var.admin_token
@@ -96,9 +96,9 @@ resource "scaleway_secret_version" "redis_password" {
   region    = var.region
 }
 
-# S3 Access Key Secret (optional)
+# S3 Access Key Secret
 resource "scaleway_secret" "s3_access_key" {
-  count = var.s3_access_key != "" ? 1 : 0
+  count = var.enable_s3_secrets ? 1 : 0
 
   name        = "${var.app_name}-s3-access-key-${var.environment}"
   description = "S3 access key"
@@ -108,16 +108,16 @@ resource "scaleway_secret" "s3_access_key" {
 }
 
 resource "scaleway_secret_version" "s3_access_key" {
-  count = var.s3_access_key != "" ? 1 : 0
+  count = var.enable_s3_secrets ? 1 : 0
 
   secret_id = scaleway_secret.s3_access_key[0].id
   data      = var.s3_access_key
   region    = var.region
 }
 
-# S3 Secret Key Secret (optional)
+# S3 Secret Key Secret
 resource "scaleway_secret" "s3_secret_key" {
-  count = var.s3_secret_key != "" ? 1 : 0
+  count = var.enable_s3_secrets ? 1 : 0
 
   name        = "${var.app_name}-s3-secret-key-${var.environment}"
   description = "S3 secret key"
@@ -127,16 +127,16 @@ resource "scaleway_secret" "s3_secret_key" {
 }
 
 resource "scaleway_secret_version" "s3_secret_key" {
-  count = var.s3_secret_key != "" ? 1 : 0
+  count = var.enable_s3_secrets ? 1 : 0
 
   secret_id = scaleway_secret.s3_secret_key[0].id
   data      = var.s3_secret_key
   region    = var.region
 }
 
-# SQS Access Key Secret (optional)
+# SQS Access Key Secret
 resource "scaleway_secret" "sqs_access_key" {
-  count = var.sqs_access_key != "" ? 1 : 0
+  count = var.enable_sqs_secrets ? 1 : 0
 
   name        = "${var.app_name}-sqs-access-key-${var.environment}"
   description = "SQS access key"
@@ -146,16 +146,16 @@ resource "scaleway_secret" "sqs_access_key" {
 }
 
 resource "scaleway_secret_version" "sqs_access_key" {
-  count = var.sqs_access_key != "" ? 1 : 0
+  count = var.enable_sqs_secrets ? 1 : 0
 
   secret_id = scaleway_secret.sqs_access_key[0].id
   data      = var.sqs_access_key
   region    = var.region
 }
 
-# SQS Secret Key Secret (optional)
+# SQS Secret Key Secret
 resource "scaleway_secret" "sqs_secret_key" {
-  count = var.sqs_secret_key != "" ? 1 : 0
+  count = var.enable_sqs_secrets ? 1 : 0
 
   name        = "${var.app_name}-sqs-secret-key-${var.environment}"
   description = "SQS secret key"
@@ -165,7 +165,7 @@ resource "scaleway_secret" "sqs_secret_key" {
 }
 
 resource "scaleway_secret_version" "sqs_secret_key" {
-  count = var.sqs_secret_key != "" ? 1 : 0
+  count = var.enable_sqs_secrets ? 1 : 0
 
   secret_id = scaleway_secret.sqs_secret_key[0].id
   data      = var.sqs_secret_key

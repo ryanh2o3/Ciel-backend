@@ -71,6 +71,12 @@ variable "redis_password" {
   default     = ""
 }
 
+variable "enable_s3_secrets" {
+  description = "Enable S3 key secrets (set to true when storage module provides keys)"
+  type        = bool
+  default     = true
+}
+
 variable "s3_access_key" {
   description = "S3 access key"
   type        = string
@@ -83,6 +89,12 @@ variable "s3_secret_key" {
   type        = string
   sensitive   = true
   default     = ""
+}
+
+variable "enable_sqs_secrets" {
+  description = "Enable SQS key secrets (set to true when messaging module provides keys)"
+  type        = bool
+  default     = true
 }
 
 variable "sqs_access_key" {

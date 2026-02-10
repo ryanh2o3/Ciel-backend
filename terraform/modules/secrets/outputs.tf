@@ -40,7 +40,7 @@ output "paseto_refresh_key_secret_id" {
 
 output "admin_token_secret_id" {
   description = "Secret Manager ID for admin token"
-  value       = var.admin_token != "" ? scaleway_secret.admin_token[0].id : null
+  value       = var.admin_token != null && var.admin_token != "" ? scaleway_secret.admin_token[0].id : null
 }
 
 output "db_password_secret_id" {
@@ -55,20 +55,20 @@ output "redis_password_secret_id" {
 
 output "s3_access_key_secret_id" {
   description = "Secret Manager ID for S3 access key"
-  value       = var.s3_access_key != "" ? scaleway_secret.s3_access_key[0].id : null
+  value       = var.enable_s3_secrets ? scaleway_secret.s3_access_key[0].id : null
 }
 
 output "s3_secret_key_secret_id" {
   description = "Secret Manager ID for S3 secret key"
-  value       = var.s3_secret_key != "" ? scaleway_secret.s3_secret_key[0].id : null
+  value       = var.enable_s3_secrets ? scaleway_secret.s3_secret_key[0].id : null
 }
 
 output "sqs_access_key_secret_id" {
   description = "Secret Manager ID for SQS access key"
-  value       = var.sqs_access_key != "" ? scaleway_secret.sqs_access_key[0].id : null
+  value       = var.enable_sqs_secrets ? scaleway_secret.sqs_access_key[0].id : null
 }
 
 output "sqs_secret_key_secret_id" {
   description = "Secret Manager ID for SQS secret key"
-  value       = var.sqs_secret_key != "" ? scaleway_secret.sqs_secret_key[0].id : null
+  value       = var.enable_sqs_secrets ? scaleway_secret.sqs_secret_key[0].id : null
 }

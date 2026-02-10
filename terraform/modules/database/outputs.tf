@@ -4,13 +4,13 @@ output "instance_id" {
 }
 
 output "endpoint_ip" {
-  description = "Database endpoint IP"
-  value       = length(scaleway_rdb_instance.main.load_balancer) > 0 ? scaleway_rdb_instance.main.load_balancer[0].ip : null
+  description = "Database endpoint IP (via private network)"
+  value       = length(scaleway_rdb_instance.main.private_network) > 0 ? scaleway_rdb_instance.main.private_network[0].ip : null
 }
 
 output "endpoint_port" {
-  description = "Database endpoint port"
-  value       = length(scaleway_rdb_instance.main.load_balancer) > 0 ? scaleway_rdb_instance.main.load_balancer[0].port : null
+  description = "Database endpoint port (via private network)"
+  value       = length(scaleway_rdb_instance.main.private_network) > 0 ? scaleway_rdb_instance.main.private_network[0].port : null
 }
 
 output "private_endpoint" {
