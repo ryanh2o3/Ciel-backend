@@ -9,6 +9,12 @@ variable "region" {
   default     = "fr-par"
 }
 
+variable "zone" {
+  description = "Scaleway zone"
+  type        = string
+  default     = "fr-par-1"
+}
+
 variable "environment" {
   description = "Environment name (dev, staging, prod)"
   type        = string
@@ -18,6 +24,12 @@ variable "app_name" {
   description = "Application name"
   type        = string
   default     = "ciel"
+}
+
+variable "tags" {
+  description = "Tags to apply to resources"
+  type        = list(string)
+  default     = []
 }
 
 variable "queue_name" {

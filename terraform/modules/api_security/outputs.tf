@@ -21,11 +21,6 @@ output "security_group_id" {
   value       = var.enable_ip_restrictions ? scaleway_instance_security_group.api_gateway[0].id : null
 }
 
-output "allowed_origins" {
-  description = "Configured allowed CORS origins"
-  value       = var.allowed_origins
-}
-
 output "allowed_ips" {
   description = "Configured allowed IP addresses"
   value       = var.allowed_ips
