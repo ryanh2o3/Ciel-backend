@@ -107,6 +107,8 @@ jobs:
             -backend-config="access_key=${{ secrets.SCW_ACCESS_KEY }}" \
             -backend-config="secret_key=${{ secrets.SCW_SECRET_KEY }}"
         env:
+          SCW_ACCESS_KEY: ${{ secrets.SCW_ACCESS_KEY }}
+          SCW_SECRET_KEY: ${{ secrets.SCW_SECRET_KEY }}
           AWS_ACCESS_KEY_ID: ${{ secrets.SCW_ACCESS_KEY }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.SCW_SECRET_KEY }}
 
@@ -128,6 +130,8 @@ jobs:
           TF_VAR_paseto_access_key: ${{ secrets.PASETO_ACCESS_KEY }}
           TF_VAR_paseto_refresh_key: ${{ secrets.PASETO_REFRESH_KEY }}
           TF_VAR_admin_token: ${{ secrets.ADMIN_TOKEN }}
+          SCW_ACCESS_KEY: ${{ secrets.SCW_ACCESS_KEY }}
+          SCW_SECRET_KEY: ${{ secrets.SCW_SECRET_KEY }}
           AWS_ACCESS_KEY_ID: ${{ secrets.SCW_ACCESS_KEY }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.SCW_SECRET_KEY }}
 
@@ -146,6 +150,8 @@ jobs:
           TF_VAR_paseto_access_key: ${{ secrets.PASETO_ACCESS_KEY }}
           TF_VAR_paseto_refresh_key: ${{ secrets.PASETO_REFRESH_KEY }}
           TF_VAR_admin_token: ${{ secrets.ADMIN_TOKEN }}
+          SCW_ACCESS_KEY: ${{ secrets.SCW_ACCESS_KEY }}
+          SCW_SECRET_KEY: ${{ secrets.SCW_SECRET_KEY }}
           AWS_ACCESS_KEY_ID: ${{ secrets.SCW_ACCESS_KEY }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.SCW_SECRET_KEY }}
 
@@ -188,6 +194,8 @@ jobs:
             -backend-config="access_key=${{ secrets.SCW_ACCESS_KEY }}" \
             -backend-config="secret_key=${{ secrets.SCW_SECRET_KEY }}"
         env:
+          SCW_ACCESS_KEY: ${{ secrets.SCW_ACCESS_KEY }}
+          SCW_SECRET_KEY: ${{ secrets.SCW_SECRET_KEY }}
           AWS_ACCESS_KEY_ID: ${{ secrets.SCW_ACCESS_KEY }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.SCW_SECRET_KEY }}
 
@@ -201,6 +209,8 @@ jobs:
           TF_VAR_paseto_access_key: ${{ secrets.PASETO_ACCESS_KEY }}
           TF_VAR_paseto_refresh_key: ${{ secrets.PASETO_REFRESH_KEY }}
           TF_VAR_admin_token: ${{ secrets.ADMIN_TOKEN }}
+          SCW_ACCESS_KEY: ${{ secrets.SCW_ACCESS_KEY }}
+          SCW_SECRET_KEY: ${{ secrets.SCW_SECRET_KEY }}
           AWS_ACCESS_KEY_ID: ${{ secrets.SCW_ACCESS_KEY }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.SCW_SECRET_KEY }}
 
@@ -242,6 +252,8 @@ jobs:
           TF_VAR_admin_token: ${{ secrets.ADMIN_TOKEN }}
           TF_VAR_project_id: ${{ secrets.SCW_PROJECT_ID }}
           TF_VAR_scw_secret_key: ${{ secrets.SCW_SECRET_KEY }}
+          SCW_ACCESS_KEY: ${{ secrets.SCW_ACCESS_KEY }}
+          SCW_SECRET_KEY: ${{ secrets.SCW_SECRET_KEY }}
           AWS_ACCESS_KEY_ID: ${{ secrets.SCW_ACCESS_KEY }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.SCW_SECRET_KEY }}
 
