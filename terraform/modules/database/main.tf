@@ -15,7 +15,8 @@ resource "scaleway_rdb_instance" "main" {
 
   # Private network endpoint
   private_network {
-    pn_id = var.private_network_id
+    pn_id       = var.private_network_id
+    enable_ipam = true
   }
 
   # PostgreSQL settings
@@ -72,6 +73,7 @@ resource "scaleway_rdb_read_replica" "main" {
 
   private_network {
     private_network_id = var.private_network_id
+    enable_ipam        = true
   }
 }
 

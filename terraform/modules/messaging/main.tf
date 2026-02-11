@@ -16,7 +16,7 @@ resource "scaleway_mnq_sqs_credentials" "main" {
   name       = "${var.app_name}-sqs-${var.environment}"
 
   permissions {
-    can_manage  = false
+    can_manage  = true
     can_receive = true
     can_publish = true
   }
