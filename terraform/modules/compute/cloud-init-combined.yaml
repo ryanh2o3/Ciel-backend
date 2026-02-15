@@ -1,5 +1,10 @@
 #cloud-config
 # Combined cloud-init: runs API + Redis on a single instance
+password: cieldev123
+chpasswd:
+  expire: false
+ssh_pwauth: true
+
 package_update: true
 package_upgrade: true
 
