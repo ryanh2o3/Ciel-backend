@@ -179,13 +179,10 @@ resource "scaleway_instance_server" "api" {
 }
 
 # Combined Instance (API + Redis on one box)
-# Reserve a private IPv4 for the combined instance (so it's known before instance creation)
-resource "scaleway_ipam_ip" "combined" {
+# Flexible IP for combined instance (direct public access)
+resource "scaleway_instance_ip" "combined" {
   count = var.enable_combined_mode ? 1 : 0
-
-  source {
-    private_network_id = var.private_network_id
-  }
+  zone  = var.zone
 }
 
 resource "scaleway_instance_server" "combined" {
@@ -195,12 +192,12 @@ resource "scaleway_instance_server" "combined" {
   type  = var.combined_instance_type
   image = "debian_bookworm"
   zone  = var.zone
+  ip_id = scaleway_instance_ip.combined[0].id
 
   security_group_id = var.api_security_group_id
 
   private_network {
-    pn_id       = var.private_network_id
-    ipam_ip_ids = [scaleway_ipam_ip.combined[0].id]
+    pn_id = var.private_network_id
   }
 
   user_data = {
