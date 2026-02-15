@@ -30,6 +30,11 @@ output "api_instance_public_ips" {
   ) : [for s in scaleway_instance_server.api : try(s.public_ips[0].address, null)]
 }
 
+output "combined_private_ipv4" {
+  description = "Combined instance private IPv4 on the private network"
+  value       = var.enable_combined_mode ? scaleway_ipam_ip.combined[0].address : null
+}
+
 output "worker_instance_ids" {
   description = "Polling worker instance IDs (empty when using serverless worker)"
   value       = scaleway_instance_server.worker[*].id

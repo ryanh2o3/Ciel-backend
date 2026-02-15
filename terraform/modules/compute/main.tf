@@ -179,6 +179,15 @@ resource "scaleway_instance_server" "api" {
 }
 
 # Combined Instance (API + Redis on one box)
+# Reserve a private IPv4 for the combined instance (so it's known before instance creation)
+resource "scaleway_ipam_ip" "combined" {
+  count = var.enable_combined_mode ? 1 : 0
+
+  source {
+    private_network_id = var.private_network_id
+  }
+}
+
 resource "scaleway_instance_server" "combined" {
   count = var.enable_combined_mode ? 1 : 0
 
@@ -190,7 +199,8 @@ resource "scaleway_instance_server" "combined" {
   security_group_id = var.api_security_group_id
 
   private_network {
-    pn_id = var.private_network_id
+    pn_id       = var.private_network_id
+    ipam_ip_ids = [scaleway_ipam_ip.combined[0].id]
   }
 
   user_data = {

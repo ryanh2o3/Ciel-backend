@@ -235,20 +235,10 @@ module "observability" {
   enable_alerts = false  # No alerts for dev
 }
 
-# Look up the combined instance's IPv4 on the private network (IPAM-assigned)
-data "scaleway_ipam_ip" "combined" {
-  type = "ipv4"
-
-  resource {
-    id   = module.compute.api_instance_ids[0]
-    type = "instance_server"
-  }
-}
-
 # PAT rules — route internet traffic through the public gateway to the combined instance
 resource "scaleway_vpc_public_gateway_pat_rule" "http" {
   gateway_id   = module.networking.public_gateway_id
-  private_ip   = data.scaleway_ipam_ip.combined.address
+  private_ip   = module.compute.combined_private_ipv4
   private_port = 80
   public_port  = 80
   protocol     = "tcp"
@@ -257,7 +247,7 @@ resource "scaleway_vpc_public_gateway_pat_rule" "http" {
 
 resource "scaleway_vpc_public_gateway_pat_rule" "https" {
   gateway_id   = module.networking.public_gateway_id
-  private_ip   = data.scaleway_ipam_ip.combined.address
+  private_ip   = module.compute.combined_private_ipv4
   private_port = 443
   public_port  = 443
   protocol     = "tcp"
