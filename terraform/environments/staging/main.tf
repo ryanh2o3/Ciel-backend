@@ -18,9 +18,10 @@ terraform {
 
 # Configure the Scaleway provider
 provider "scaleway" {
-  zone       = var.zone
-  region     = var.region
-  project_id = var.project_id
+  zone            = var.zone
+  region          = var.region
+  project_id      = var.project_id
+  organization_id = var.organization_id
 }
 
 # Shared variables

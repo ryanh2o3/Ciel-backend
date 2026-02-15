@@ -1,7 +1,13 @@
 provider "scaleway" {
-  zone       = var.zone
-  region     = var.region
-  project_id = var.project_id
+  zone            = var.zone
+  region          = var.region
+  project_id      = var.project_id
+  organization_id = var.organization_id
+}
+
+variable "organization_id" {
+  description = "Scaleway organization ID"
+  type        = string
 }
 
 variable "zone" {

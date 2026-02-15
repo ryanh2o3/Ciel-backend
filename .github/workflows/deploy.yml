@@ -122,6 +122,7 @@ jobs:
         run: |
           terraform plan -no-color -input=false \
             -var="project_id=${{ secrets.SCW_PROJECT_ID }}" \
+            -var="organization_id=${{ secrets.SCW_ORGANIZATION_ID }}" \
             -var="scw_secret_key=${{ secrets.SCW_SECRET_KEY }}" \
             -var="container_image_tag=${{ needs.build-and-push.outputs.image_tag }}"
         env:
@@ -256,6 +257,7 @@ jobs:
           TF_VAR_paseto_refresh_key: ${{ secrets.PASETO_REFRESH_KEY }}
           TF_VAR_admin_token: ${{ secrets.ADMIN_TOKEN }}
           TF_VAR_project_id: ${{ secrets.SCW_PROJECT_ID }}
+          TF_VAR_organization_id: ${{ secrets.SCW_ORGANIZATION_ID }}
           TF_VAR_scw_secret_key: ${{ secrets.SCW_SECRET_KEY }}
           SCW_ACCESS_KEY: ${{ secrets.SCW_ACCESS_KEY }}
           SCW_SECRET_KEY: ${{ secrets.SCW_SECRET_KEY }}

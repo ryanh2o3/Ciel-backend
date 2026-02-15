@@ -2,7 +2,8 @@
 # Copy this to terraform.tfvars and fill in the values
 # IMPORTANT: Never commit terraform.tfvars to version control
 
-project_id = "your-scaleway-project-id"
+project_id      = "your-scaleway-project-id"
+organization_id = "your-scaleway-organization-id"
 
 db_admin_password = "secure-admin-password-min-16-chars"
 db_user_password  = "secure-user-password-min-16-chars"

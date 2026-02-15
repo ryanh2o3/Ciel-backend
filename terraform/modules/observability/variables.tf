@@ -32,10 +32,10 @@ variable "enable_cockpit" {
   default     = true
 }
 
-variable "grafana_user_role" {
-  description = "Grafana user role (viewer, editor)"
-  type        = string
-  default     = "viewer"
+variable "retention_days" {
+  description = "Data retention period for Cockpit data sources (1-365 days)"
+  type        = number
+  default     = 31
 }
 
 variable "enable_alerts" {

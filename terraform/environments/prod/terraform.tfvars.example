@@ -3,7 +3,8 @@
 # IMPORTANT: Never commit terraform.tfvars to version control
 
 # Scaleway project ID
-project_id = "your-scaleway-project-id"
+project_id      = "your-scaleway-project-id"
+organization_id = "your-scaleway-organization-id"
 
 # Database credentials (generate secure passwords)
 db_admin_password = "secure-admin-password-min-16-chars"

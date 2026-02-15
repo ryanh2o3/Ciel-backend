@@ -1,11 +1,32 @@
-# Enable Cockpit for the project
-resource "scaleway_cockpit" "main" {
+# Cockpit data sources (replaces deprecated scaleway_cockpit resource)
+resource "scaleway_cockpit_source" "metrics" {
   count = var.enable_cockpit ? 1 : 0
 
-  project_id = var.project_id
+  project_id     = var.project_id
+  name           = "${var.app_name}-metrics-${var.environment}"
+  type           = "metrics"
+  retention_days = var.retention_days
 }
 
-# Cockpit token for pushing metrics
+resource "scaleway_cockpit_source" "logs" {
+  count = var.enable_cockpit ? 1 : 0
+
+  project_id     = var.project_id
+  name           = "${var.app_name}-logs-${var.environment}"
+  type           = "logs"
+  retention_days = var.retention_days
+}
+
+resource "scaleway_cockpit_source" "traces" {
+  count = var.enable_cockpit ? 1 : 0
+
+  project_id     = var.project_id
+  name           = "${var.app_name}-traces-${var.environment}"
+  type           = "traces"
+  retention_days = var.retention_days
+}
+
+# Cockpit token for pushing metrics/logs/traces
 resource "scaleway_cockpit_token" "main" {
   count = var.enable_cockpit ? 1 : 0
 
@@ -20,28 +41,13 @@ resource "scaleway_cockpit_token" "main" {
     query_traces  = true
     write_traces  = true
   }
-
-  depends_on = [scaleway_cockpit.main]
 }
 
-# Grafana user for dashboard access
-resource "scaleway_cockpit_grafana_user" "main" {
+# Grafana access via IAM (replaces deprecated scaleway_cockpit_grafana_user)
+data "scaleway_cockpit_grafana" "main" {
   count = var.enable_cockpit ? 1 : 0
 
   project_id = var.project_id
-  login      = "${var.app_name}-${var.environment}"
-  role       = var.grafana_user_role
-
-  depends_on = [scaleway_cockpit.main]
-}
-
-# Data source to get Cockpit endpoints
-data "scaleway_cockpit" "main" {
-  count = var.enable_cockpit ? 1 : 0
-
-  project_id = var.project_id
-
-  depends_on = [scaleway_cockpit.main]
 }
 
 # Fetch all available preconfigured alerts
@@ -50,8 +56,6 @@ data "scaleway_cockpit_preconfigured_alert" "all" {
 
   project_id = var.project_id
   region     = var.region
-
-  depends_on = [scaleway_cockpit.main]
 }
 
 # Alert manager contact points
@@ -72,6 +76,4 @@ resource "scaleway_cockpit_alert_manager" "main" {
       email = contact_points.value
     }
   }
-
-  depends_on = [scaleway_cockpit.main]
 }
