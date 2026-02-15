@@ -178,7 +178,7 @@ module "compute" {
   worker_instance_count    = 0
 
   # Serverless Container for media processing
-  enable_serverless_worker    = true
+  enable_serverless_worker    = false  # Enable after pushing container image
   serverless_worker_cpu       = 1000  # 1 vCPU
   serverless_worker_memory    = 1024  # 1024 MB (minimum for 1 vCPU)
   serverless_worker_min_scale = 0     # Scale to zero
