@@ -26,7 +26,7 @@ output "api_instance_ips" {
 output "api_instance_public_ips" {
   description = "API instance public IPs (if assigned)"
   value = var.enable_combined_mode ? (
-    [for s in scaleway_instance_server.combined : try(s.public_ips[0].address, null)]
+    [for ip in scaleway_instance_ip.combined : ip.address]
   ) : [for s in scaleway_instance_server.api : try(s.public_ips[0].address, null)]
 }
 
