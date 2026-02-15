@@ -235,7 +235,26 @@ module "observability" {
   enable_alerts = false  # No alerts for dev
 }
 
-# DNS Module — points dev-api.ciel-social.eu at the combined instance
+# PAT rules — route internet traffic through the public gateway to the combined instance
+resource "scaleway_vpc_public_gateway_pat_rule" "http" {
+  gateway_id   = module.networking.public_gateway_id
+  private_ip   = module.compute.api_instance_ips[0]
+  private_port = 80
+  public_port  = 80
+  protocol     = "tcp"
+  zone         = var.zone
+}
+
+resource "scaleway_vpc_public_gateway_pat_rule" "https" {
+  gateway_id   = module.networking.public_gateway_id
+  private_ip   = module.compute.api_instance_ips[0]
+  private_port = 443
+  public_port  = 443
+  protocol     = "tcp"
+  zone         = var.zone
+}
+
+# DNS Module — points api.ciel-social.eu at the public gateway
 module "dns" {
   source = "../../modules/dns"
 
@@ -244,7 +263,7 @@ module "dns" {
   domain_name      = var.domain_name
   api_subdomain    = "api"
   cdn_subdomain    = "dev-media"
-  load_balancer_ip = module.compute.api_instance_public_ips[0]  # Combined instance public IP
+  load_balancer_ip = module.networking.public_gateway_ip  # Gateway public IP
   cdn_endpoint     = module.storage.cdn_endpoint
 
   # Dev-specific settings

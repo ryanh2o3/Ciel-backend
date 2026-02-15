@@ -120,9 +120,7 @@ jobs:
       - name: Terraform Plan
         working-directory: terraform/environments/${{ matrix.environment }}
         run: |
-          terraform plan -no-color -input=false -refresh=false \
-            -target=module.storage.scaleway_object_bucket_policy.media \
-            -target=module.networking \
+          terraform plan -no-color -input=false \
             -var="project_id=${{ secrets.SCW_PROJECT_ID }}" \
             -var="organization_id=${{ secrets.SCW_ORGANIZATION_ID }}" \
             -var="scw_secret_key=${{ secrets.SCW_SECRET_KEY }}" \
@@ -144,9 +142,7 @@ jobs:
         if: github.event_name != 'pull_request'
         working-directory: terraform/environments/${{ matrix.environment }}
         run: |
-          terraform plan -no-color -input=false -refresh=false -out=tfplan \
-            -target=module.storage.scaleway_object_bucket_policy.media \
-            -target=module.networking \
+          terraform plan -no-color -input=false -out=tfplan \
             -var="project_id=${{ secrets.SCW_PROJECT_ID }}" \
             -var="organization_id=${{ secrets.SCW_ORGANIZATION_ID }}" \
             -var="scw_secret_key=${{ secrets.SCW_SECRET_KEY }}" \
