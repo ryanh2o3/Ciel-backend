@@ -180,7 +180,7 @@ module "compute" {
   # Serverless Container for media processing
   enable_serverless_worker    = true
   serverless_worker_cpu       = 1000  # 1 vCPU
-  serverless_worker_memory    = 512   # 512 MB
+  serverless_worker_memory    = 1024  # 1024 MB (minimum for 1 vCPU)
   serverless_worker_min_scale = 0     # Scale to zero
   serverless_worker_max_scale = 3
   serverless_database_url     = local.serverless_database_url
@@ -235,10 +235,20 @@ module "observability" {
   enable_alerts = false  # No alerts for dev
 }
 
+# Look up the combined instance's IPv4 on the private network (IPAM-assigned)
+data "scaleway_ipam_ip" "combined" {
+  type = "ipv4"
+
+  resource {
+    id   = module.compute.api_instance_ids[0]
+    type = "instance_server"
+  }
+}
+
 # PAT rules — route internet traffic through the public gateway to the combined instance
 resource "scaleway_vpc_public_gateway_pat_rule" "http" {
   gateway_id   = module.networking.public_gateway_id
-  private_ip   = module.compute.api_instance_ips[0]
+  private_ip   = data.scaleway_ipam_ip.combined.address
   private_port = 80
   public_port  = 80
   protocol     = "tcp"
@@ -247,7 +257,7 @@ resource "scaleway_vpc_public_gateway_pat_rule" "http" {
 
 resource "scaleway_vpc_public_gateway_pat_rule" "https" {
   gateway_id   = module.networking.public_gateway_id
-  private_ip   = module.compute.api_instance_ips[0]
+  private_ip   = data.scaleway_ipam_ip.combined.address
   private_port = 443
   public_port  = 443
   protocol     = "tcp"
