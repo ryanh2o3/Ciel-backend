@@ -113,6 +113,12 @@ variable "db_user_permission" {
   default     = "readwrite"
 }
 
+variable "volume_type" {
+  description = "Database volume type (sbs_5k or sbs_15k). bssd is deprecated."
+  type        = string
+  default     = "sbs_5k"
+}
+
 variable "tags" {
   description = "Tags to apply to resources"
   type        = list(string)

@@ -7,7 +7,7 @@ resource "scaleway_rdb_instance" "main" {
   engine             = var.db_engine
   is_ha_cluster      = var.enable_ha
   disable_backup     = false
-  volume_type        = "bssd"
+  volume_type        = var.volume_type
   volume_size_in_gb  = var.volume_size_in_gb
 
   backup_schedule_frequency = var.backup_schedule_frequency
