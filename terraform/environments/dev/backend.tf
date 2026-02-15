@@ -6,9 +6,7 @@ terraform {
     bucket   = "ciel-terraform-state"
     key      = "dev/terraform.tfstate"
     region   = "fr-par"
-    endpoints = {
-      s3 = "https://s3.fr-par.scw.cloud"
-    }
+    endpoint = "https://s3.fr-par.scw.cloud"
     encrypt  = false
     use_lockfile = true
 
