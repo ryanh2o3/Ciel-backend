@@ -19,13 +19,10 @@ resource "scaleway_rdb_instance" "main" {
     enable_ipam = true
   }
 
-  # PostgreSQL settings (init_settings can only be set at creation)
-  init_settings = {
-    max_connections = var.db_settings["max_connections"]
-  }
-
+  # PostgreSQL settings
   settings = {
     work_mem             = var.db_settings["work_mem"]
+    max_connections      = var.db_settings["max_connections"]
     effective_cache_size = var.db_settings["effective_cache_size"]
   }
 
