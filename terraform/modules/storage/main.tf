@@ -98,6 +98,16 @@ resource "scaleway_object_bucket_policy" "media" {
     Version = "2023-04-17"
     Statement = [
       {
+        Sid       = "AllowProjectManagement"
+        Effect    = "Allow"
+        Principal = { SCW = "project_id:${var.project_id}" }
+        Action    = ["s3:*"]
+        Resource  = [
+          scaleway_object_bucket.media.name,
+          "${scaleway_object_bucket.media.name}/*"
+        ]
+      },
+      {
         Sid       = "AllowPublicRead"
         Effect    = "Allow"
         Principal = "*"
