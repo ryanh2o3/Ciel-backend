@@ -30,6 +30,7 @@ resource "scaleway_rdb_instance" "main" {
 
   lifecycle {
     prevent_destroy = true
+    ignore_changes  = [settings]
   }
 }
 
