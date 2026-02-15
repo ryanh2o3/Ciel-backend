@@ -144,6 +144,7 @@ jobs:
         run: |
           terraform plan -no-color -input=false -out=tfplan \
             -var="project_id=${{ secrets.SCW_PROJECT_ID }}" \
+            -var="organization_id=${{ secrets.SCW_ORGANIZATION_ID }}" \
             -var="scw_secret_key=${{ secrets.SCW_SECRET_KEY }}" \
             -var="container_image_tag=${{ needs.build-and-push.outputs.image_tag }}"
         env:
