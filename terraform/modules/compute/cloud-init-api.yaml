@@ -43,11 +43,7 @@ write_files:
       }
 
       urlencode() {
-        python3 - <<'PY' "$1"
-import sys
-import urllib.parse
-print(urllib.parse.quote(sys.argv[1]))
-PY
+        python3 -c "import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1]))" "$1"
       }
 
       db_password="$(fetch_secret "${db_password_secret_id}")"

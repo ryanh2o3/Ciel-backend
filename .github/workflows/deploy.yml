@@ -80,6 +80,7 @@ jobs:
           tags: |
             ${{ env.CONTAINER_REGISTRY }}/${{ env.DOCKER_IMAGE_NAME }}:${{ steps.tag.outputs.tag }}
             ${{ env.CONTAINER_REGISTRY }}/${{ env.DOCKER_IMAGE_NAME }}:latest
+            ${{ env.CONTAINER_REGISTRY }}/${{ env.DOCKER_IMAGE_NAME }}:dev-stable
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
