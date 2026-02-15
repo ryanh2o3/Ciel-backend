@@ -111,7 +111,7 @@ module "storage" {
   tags                 = local.tags
 
   # Dev-specific settings
-  cors_allowed_origins = ["http://localhost:3000", "http://localhost:8080"]
+  cors_allowed_origins = ["https://ciel-social.eu", "https://api.ciel-social.eu"]
   enable_cdn           = false  # No CDN for dev
   enable_glacier_transition = false
 }
@@ -171,7 +171,7 @@ module "compute" {
   enable_combined_mode     = true
   combined_instance_type   = "DEV1-M"
   embedded_redis_maxmemory_mb = 512
-  api_domain               = "dev-api.${var.domain_name}"
+  api_domain               = "api.${var.domain_name}"
 
   # No separate API/worker instances
   api_instance_count       = 0
@@ -242,7 +242,7 @@ module "dns" {
   count = var.enable_dns ? 1 : 0
 
   domain_name      = var.domain_name
-  api_subdomain    = "dev-api"
+  api_subdomain    = "api"
   cdn_subdomain    = "dev-media"
   load_balancer_ip = module.compute.api_instance_public_ips[0]  # Combined instance public IP
   cdn_endpoint     = module.storage.cdn_endpoint
