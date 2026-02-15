@@ -98,7 +98,7 @@ jobs:
       - name: Set up Terraform
         uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: 1.5.7
+          terraform_version: 1.14.5
 
       - name: Terraform Init
         working-directory: terraform/environments/${{ matrix.environment }}
@@ -121,6 +121,8 @@ jobs:
         working-directory: terraform/environments/${{ matrix.environment }}
         run: |
           terraform plan -no-color -input=false -refresh=false \
+            -target=module.storage.scaleway_object_bucket_policy.media \
+            -target=module.networking \
             -var="project_id=${{ secrets.SCW_PROJECT_ID }}" \
             -var="organization_id=${{ secrets.SCW_ORGANIZATION_ID }}" \
             -var="scw_secret_key=${{ secrets.SCW_SECRET_KEY }}" \
@@ -143,6 +145,8 @@ jobs:
         working-directory: terraform/environments/${{ matrix.environment }}
         run: |
           terraform plan -no-color -input=false -refresh=false -out=tfplan \
+            -target=module.storage.scaleway_object_bucket_policy.media \
+            -target=module.networking \
             -var="project_id=${{ secrets.SCW_PROJECT_ID }}" \
             -var="organization_id=${{ secrets.SCW_ORGANIZATION_ID }}" \
             -var="scw_secret_key=${{ secrets.SCW_SECRET_KEY }}" \
@@ -184,7 +188,7 @@ jobs:
       - name: Set up Terraform
         uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: 1.5.7
+          terraform_version: 1.14.5
 
       - name: Download Terraform Plan
         uses: actions/download-artifact@v4
@@ -237,7 +241,7 @@ jobs:
       - name: Set up Terraform
         uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: 1.5.7
+          terraform_version: 1.14.5
           terraform_wrapper: false # Disable wrapper to get raw output
 
       - name: Get database URL from Terraform output
