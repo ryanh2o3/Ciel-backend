@@ -95,7 +95,7 @@ resource "scaleway_object_bucket_policy" "media" {
   region = var.region
 
   policy = jsonencode({
-    Version = "2023-04-17"
+    Version = "2012-10-17"
     Statement = [
       {
         Sid       = "AllowProjectManagement"

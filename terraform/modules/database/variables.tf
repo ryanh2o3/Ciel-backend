@@ -101,9 +101,9 @@ variable "db_settings" {
   description = "PostgreSQL settings"
   type        = map(string)
   default = {
-    work_mem              = "4MB"
+    work_mem              = "4"
     max_connections       = "100"
-    effective_cache_size  = "768MB"
+    effective_cache_size  = "768"
   }
 }
 
