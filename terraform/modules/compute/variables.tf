@@ -196,9 +196,10 @@ variable "db_user" {
   type        = string
 }
 
-variable "db_password_secret_id" {
-  description = "Secret Manager ID for database password"
+variable "db_password" {
+  description = "Database password"
   type        = string
+  sensitive   = true
 }
 
 variable "redis_host" {
@@ -219,9 +220,10 @@ variable "redis_use_tls" {
   default     = false
 }
 
-variable "redis_password_secret_id" {
-  description = "Secret Manager ID for Redis password"
+variable "redis_password" {
+  description = "Redis password"
   type        = string
+  sensitive   = true
 }
 
 variable "s3_endpoint" {
@@ -245,14 +247,16 @@ variable "s3_public_endpoint" {
   type        = string
 }
 
-variable "s3_access_key_secret_id" {
-  description = "Secret Manager ID for S3 access key"
+variable "s3_access_key" {
+  description = "S3 access key"
   type        = string
+  sensitive   = true
 }
 
-variable "s3_secret_key_secret_id" {
-  description = "Secret Manager ID for S3 secret key"
+variable "s3_secret_key" {
+  description = "S3 secret key"
   type        = string
+  sensitive   = true
 }
 
 variable "queue_endpoint" {
@@ -271,30 +275,35 @@ variable "queue_name" {
   type        = string
 }
 
-variable "sqs_access_key_secret_id" {
-  description = "Secret Manager ID for SQS access key"
+variable "sqs_access_key" {
+  description = "SQS access key"
   type        = string
+  sensitive   = true
 }
 
-variable "sqs_secret_key_secret_id" {
-  description = "Secret Manager ID for SQS secret key"
+variable "sqs_secret_key" {
+  description = "SQS secret key"
   type        = string
+  sensitive   = true
 }
 
-variable "paseto_access_key_secret_id" {
-  description = "Secret Manager ID for PASETO access key"
+variable "paseto_access_key" {
+  description = "PASETO access key"
   type        = string
+  sensitive   = true
 }
 
-variable "paseto_refresh_key_secret_id" {
-  description = "Secret Manager ID for PASETO refresh key"
+variable "paseto_refresh_key" {
+  description = "PASETO refresh key"
   type        = string
+  sensitive   = true
 }
 
-variable "admin_token_secret_id" {
-  description = "Secret Manager ID for admin token (optional)"
+variable "admin_token" {
+  description = "Admin token (optional)"
   type        = string
   default     = ""
+  sensitive   = true
 }
 
 variable "api_domain" {

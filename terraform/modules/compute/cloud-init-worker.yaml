@@ -6,8 +6,6 @@ packages:
   - ca-certificates
   - curl
   - gnupg
-  - jq
-  - python3
   - unattended-upgrades
 
 write_files:
@@ -26,65 +24,24 @@ write_files:
       APT::Periodic::Update-Package-Lists "1";
       APT::Periodic::Unattended-Upgrade "1";
 
-  - path: /opt/ciel/fetch-secrets.sh
-    permissions: '0700'
+  - path: /opt/ciel/.env
+    permissions: '0600'
     content: |
-      #!/usr/bin/env bash
-      set -euo pipefail
-
-      # Write scw CLI config so it doesn't look for a default config file
-      mkdir -p /root/.config/scw
-      cat > /root/.config/scw/config.yaml <<SCWCFG
-      access_key: ${scw_access_key}
-      secret_key: ${scw_secret_key}
-      default_region: ${scw_region}
-      default_zone: ${scw_zone}
-      SCWCFG
-
-      fetch_secret() {
-        scw secret version access "secret-id=$1" --output json | jq -r .data
-      }
-
-      urlencode() {
-        python3 -c "import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1]))" "$1"
-      }
-
-      db_password="$(fetch_secret "${db_password_secret_id}")"
-      redis_password="$(fetch_secret "${redis_password_secret_id}")"
-      s3_access_key="$(fetch_secret "${s3_access_key_secret_id}")"
-      s3_secret_key="$(fetch_secret "${s3_secret_key_secret_id}")"
-      sqs_access_key="$(fetch_secret "${sqs_access_key_secret_id}")"
-      sqs_secret_key="$(fetch_secret "${sqs_secret_key_secret_id}")"
-
-      db_password_enc="$(urlencode "$db_password")"
-      redis_password_enc="$(urlencode "$redis_password")"
-
-      database_url="postgres://${db_user}:$${db_password_enc}@${db_host}:${db_port}/${db_name}?sslmode=require"
-      redis_scheme="redis"
-      if [ "${redis_use_tls}" = "true" ]; then
-        redis_scheme="rediss"
-      fi
-      redis_url="$${redis_scheme}://:$${redis_password_enc}@${redis_host}:${redis_port}"
-
-      cat > /opt/ciel/.env <<EOF
       APP_MODE=worker
-      DATABASE_URL=$${database_url}
-      REDIS_URL=$${redis_url}
+      DATABASE_URL=${database_url}
+      REDIS_URL=${redis_url}
       S3_ENDPOINT=${s3_endpoint}
       S3_REGION=${s3_region}
       S3_BUCKET=${s3_bucket}
       S3_PUBLIC_ENDPOINT=${s3_public_endpoint}
-      AWS_ACCESS_KEY_ID=$${s3_access_key}
-      AWS_SECRET_ACCESS_KEY=$${s3_secret_key}
+      AWS_ACCESS_KEY_ID=${s3_access_key}
+      AWS_SECRET_ACCESS_KEY=${s3_secret_key}
       QUEUE_ENDPOINT=${queue_endpoint}
       QUEUE_REGION=${queue_region}
       QUEUE_NAME=${queue_name}
-      SQS_ACCESS_KEY=$${sqs_access_key}
-      SQS_SECRET_KEY=$${sqs_secret_key}
+      SQS_ACCESS_KEY=${sqs_access_key}
+      SQS_SECRET_KEY=${sqs_secret_key}
       RUST_LOG=${rust_log}
-      EOF
-
-      chmod 600 /opt/ciel/.env
 
   - path: /opt/ciel/docker-compose.yml
     content: |
@@ -115,15 +72,9 @@ runcmd:
   - apt-get update
   - apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
 
-  # Install Scaleway CLI
-  - curl -fsSL https://raw.githubusercontent.com/scaleway/scaleway-cli/master/scripts/get.sh | sh
-
   # Configure unattended upgrades
   - dpkg-reconfigure -f noninteractive unattended-upgrades
   - systemctl enable unattended-upgrades
-
-  # Fetch secrets and write environment file
-  - /opt/ciel/fetch-secrets.sh
 
   # Login to Scaleway Container Registry using scoped IAM key
   - echo "${scw_secret_key}" | docker login rg.${scw_region}.scw.cloud -u ${scw_access_key} --password-stdin

@@ -6,7 +6,7 @@ resource "scaleway_registry_namespace" "main" {
   region      = var.region
 }
 
-# IAM application for runtime access (registry pull + secrets read)
+# IAM application for runtime access (registry pull)
 resource "scaleway_iam_application" "runtime" {
   name        = "${var.app_name}-${var.environment}-${var.runtime_iam_application_name}"
   description = "Runtime access for ${var.app_name} ${var.environment} instances"
@@ -14,14 +14,13 @@ resource "scaleway_iam_application" "runtime" {
 
 resource "scaleway_iam_policy" "runtime" {
   name           = "${var.app_name}-runtime-policy-${var.environment}"
-  description    = "Registry pull and secrets read for ${var.app_name} ${var.environment}"
+  description    = "Registry pull for ${var.app_name} ${var.environment}"
   application_id = scaleway_iam_application.runtime.id
 
   rule {
     project_ids = [var.project_id]
     permission_set_names = [
       "ContainerRegistryReadOnly",
-      "SecretManagerReadOnly",
     ]
   }
 }
@@ -35,109 +34,96 @@ resource "scaleway_iam_api_key" "runtime" {
 # Cloud-init templates
 # ============================================================
 
+# Pre-compute connection URLs (URL-encode passwords for safe embedding)
+locals {
+  database_url = "postgres://${var.db_user}:${urlencode(var.db_password)}@${var.db_host}:${var.db_port}/${var.db_name}?sslmode=require"
+  redis_url    = "${var.redis_use_tls ? "rediss" : "redis"}://:${urlencode(var.redis_password)}@${var.redis_host}:${var.redis_port}"
+  redis_url_combined = "redis://:${urlencode(var.redis_password)}@redis:6379"
+}
+
 # Standard API-only cloud-init (multi-instance mode)
 locals {
   cloud_init_api = !var.enable_combined_mode ? templatefile("${path.module}/cloud-init-api.yaml", {
-    container_image            = var.container_image
-    image_tag                  = var.container_image_tag
-    scw_access_key             = scaleway_iam_api_key.runtime.access_key
-    scw_secret_key             = scaleway_iam_api_key.runtime.secret_key
-    scw_region                 = var.region
-    scw_zone                   = var.zone
-    http_addr                  = var.http_addr
-    db_host                    = var.db_host
-    db_port                    = var.db_port
-    db_name                    = var.db_name
-    db_user                    = var.db_user
-    db_password_secret_id      = var.db_password_secret_id
-    redis_host                 = var.redis_host
-    redis_port                 = var.redis_port
-    redis_use_tls              = var.redis_use_tls
-    redis_password_secret_id   = var.redis_password_secret_id
-    s3_endpoint                = var.s3_endpoint
-    s3_region                  = var.s3_region
-    s3_bucket                  = var.s3_bucket
-    s3_public_endpoint         = var.s3_public_endpoint
-    s3_access_key_secret_id    = var.s3_access_key_secret_id
-    s3_secret_key_secret_id    = var.s3_secret_key_secret_id
-    queue_endpoint             = var.queue_endpoint
-    queue_region               = var.queue_region
-    queue_name                 = var.queue_name
-    sqs_access_key_secret_id   = var.sqs_access_key_secret_id
-    sqs_secret_key_secret_id   = var.sqs_secret_key_secret_id
-    paseto_access_key_secret_id  = var.paseto_access_key_secret_id
-    paseto_refresh_key_secret_id = var.paseto_refresh_key_secret_id
-    admin_token_secret_id        = var.admin_token_secret_id
-    rust_log                   = var.rust_log
+    container_image  = var.container_image
+    image_tag        = var.container_image_tag
+    scw_access_key   = scaleway_iam_api_key.runtime.access_key
+    scw_secret_key   = scaleway_iam_api_key.runtime.secret_key
+    scw_region       = var.region
+    http_addr        = var.http_addr
+    database_url     = local.database_url
+    redis_url        = local.redis_url
+    s3_endpoint      = var.s3_endpoint
+    s3_region        = var.s3_region
+    s3_bucket        = var.s3_bucket
+    s3_public_endpoint = var.s3_public_endpoint
+    s3_access_key    = var.s3_access_key
+    s3_secret_key    = var.s3_secret_key
+    queue_endpoint   = var.queue_endpoint
+    queue_region     = var.queue_region
+    queue_name       = var.queue_name
+    sqs_access_key   = var.sqs_access_key
+    sqs_secret_key   = var.sqs_secret_key
+    paseto_access_key  = var.paseto_access_key
+    paseto_refresh_key = var.paseto_refresh_key
+    admin_token      = var.admin_token
+    rust_log         = var.rust_log
   }) : ""
 }
 
 # Combined cloud-init: API + Redis on one instance
 locals {
   cloud_init_combined = var.enable_combined_mode ? templatefile("${path.module}/cloud-init-combined.yaml", {
-    container_image            = var.container_image
-    image_tag                  = var.container_image_tag
-    scw_access_key             = scaleway_iam_api_key.runtime.access_key
-    scw_secret_key             = scaleway_iam_api_key.runtime.secret_key
-    scw_region                 = var.region
-    scw_zone                   = var.zone
-    http_addr                  = var.http_addr
-    api_domain                 = var.api_domain
-    db_host                    = var.db_host
-    db_port                    = var.db_port
-    db_name                    = var.db_name
-    db_user                    = var.db_user
-    db_password_secret_id      = var.db_password_secret_id
-    redis_password_secret_id   = var.redis_password_secret_id
-    redis_maxmemory_mb         = var.embedded_redis_maxmemory_mb
-    s3_endpoint                = var.s3_endpoint
-    s3_region                  = var.s3_region
-    s3_bucket                  = var.s3_bucket
-    s3_public_endpoint         = var.s3_public_endpoint
-    s3_access_key_secret_id    = var.s3_access_key_secret_id
-    s3_secret_key_secret_id    = var.s3_secret_key_secret_id
-    queue_endpoint             = var.queue_endpoint
-    queue_region               = var.queue_region
-    queue_name                 = var.queue_name
-    sqs_access_key_secret_id   = var.sqs_access_key_secret_id
-    sqs_secret_key_secret_id   = var.sqs_secret_key_secret_id
-    paseto_access_key_secret_id  = var.paseto_access_key_secret_id
-    paseto_refresh_key_secret_id = var.paseto_refresh_key_secret_id
-    admin_token_secret_id        = var.admin_token_secret_id
-    rust_log                   = var.rust_log
+    container_image  = var.container_image
+    image_tag        = var.container_image_tag
+    scw_access_key   = scaleway_iam_api_key.runtime.access_key
+    scw_secret_key   = scaleway_iam_api_key.runtime.secret_key
+    scw_region       = var.region
+    http_addr        = var.http_addr
+    api_domain       = var.api_domain
+    database_url     = local.database_url
+    redis_url        = local.redis_url_combined
+    redis_password   = var.redis_password
+    redis_maxmemory_mb = var.embedded_redis_maxmemory_mb
+    s3_endpoint      = var.s3_endpoint
+    s3_region        = var.s3_region
+    s3_bucket        = var.s3_bucket
+    s3_public_endpoint = var.s3_public_endpoint
+    s3_access_key    = var.s3_access_key
+    s3_secret_key    = var.s3_secret_key
+    queue_endpoint   = var.queue_endpoint
+    queue_region     = var.queue_region
+    queue_name       = var.queue_name
+    sqs_access_key   = var.sqs_access_key
+    sqs_secret_key   = var.sqs_secret_key
+    paseto_access_key  = var.paseto_access_key
+    paseto_refresh_key = var.paseto_refresh_key
+    admin_token      = var.admin_token
+    rust_log         = var.rust_log
   }) : ""
 }
 
 # Cloud-init template for Worker instances (legacy polling mode)
 locals {
   cloud_init_worker = var.worker_instance_count > 0 ? templatefile("${path.module}/cloud-init-worker.yaml", {
-    container_image            = var.container_image
-    image_tag                  = var.container_image_tag
-    scw_access_key             = scaleway_iam_api_key.runtime.access_key
-    scw_secret_key             = scaleway_iam_api_key.runtime.secret_key
-    scw_region                 = var.region
-    scw_zone                   = var.zone
-    db_host                    = var.db_host
-    db_port                    = var.db_port
-    db_name                    = var.db_name
-    db_user                    = var.db_user
-    db_password_secret_id      = var.db_password_secret_id
-    redis_host                 = var.redis_host
-    redis_port                 = var.redis_port
-    redis_use_tls              = var.redis_use_tls
-    redis_password_secret_id   = var.redis_password_secret_id
-    s3_endpoint                = var.s3_endpoint
-    s3_region                  = var.s3_region
-    s3_bucket                  = var.s3_bucket
-    s3_public_endpoint         = var.s3_public_endpoint
-    s3_access_key_secret_id    = var.s3_access_key_secret_id
-    s3_secret_key_secret_id    = var.s3_secret_key_secret_id
-    queue_endpoint             = var.queue_endpoint
-    queue_region               = var.queue_region
-    queue_name                 = var.queue_name
-    sqs_access_key_secret_id   = var.sqs_access_key_secret_id
-    sqs_secret_key_secret_id   = var.sqs_secret_key_secret_id
-    rust_log                   = var.rust_log
+    container_image  = var.container_image
+    image_tag        = var.container_image_tag
+    scw_access_key   = scaleway_iam_api_key.runtime.access_key
+    scw_secret_key   = scaleway_iam_api_key.runtime.secret_key
+    scw_region       = var.region
+    database_url     = local.database_url
+    redis_url        = local.redis_url
+    s3_endpoint      = var.s3_endpoint
+    s3_region        = var.s3_region
+    s3_bucket        = var.s3_bucket
+    s3_public_endpoint = var.s3_public_endpoint
+    s3_access_key    = var.s3_access_key
+    s3_secret_key    = var.s3_secret_key
+    queue_endpoint   = var.queue_endpoint
+    queue_region     = var.queue_region
+    queue_name       = var.queue_name
+    sqs_access_key   = var.sqs_access_key
+    sqs_secret_key   = var.sqs_secret_key
+    rust_log         = var.rust_log
   }) : ""
 }
 

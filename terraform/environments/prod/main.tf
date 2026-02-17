@@ -183,30 +183,30 @@ module "compute" {
   load_balancer_backend_id = module.networking.load_balancer_backend_id
 
   # Application configuration from other modules
-  db_host                  = module.database.private_endpoint
-  db_port                  = module.database.endpoint_port
-  db_name                  = module.database.database_name
-  db_user                  = module.database.database_user
-  db_password_secret_id    = module.secrets.db_password_secret_id
-  redis_host               = module.cache.redis_host
-  redis_port               = module.cache.redis_port
-  redis_use_tls            = module.cache.redis_use_tls
-  redis_password_secret_id = module.secrets.redis_password_secret_id
-  s3_endpoint              = module.storage.s3_endpoint
-  s3_region                = var.region
-  s3_bucket                = module.storage.bucket_name
-  s3_public_endpoint       = module.storage.s3_public_endpoint
-  s3_access_key_secret_id  = module.secrets.s3_access_key_secret_id
-  s3_secret_key_secret_id  = module.secrets.s3_secret_key_secret_id
-  queue_endpoint           = module.messaging.queue_endpoint
-  queue_region             = var.region
-  queue_name               = module.messaging.queue_name
-  sqs_access_key_secret_id = module.secrets.sqs_access_key_secret_id
-  sqs_secret_key_secret_id = module.secrets.sqs_secret_key_secret_id
-  paseto_access_key_secret_id  = module.secrets.paseto_access_key_secret_id
-  paseto_refresh_key_secret_id = module.secrets.paseto_refresh_key_secret_id
-  admin_token_secret_id        = module.secrets.admin_token_secret_id != null ? module.secrets.admin_token_secret_id : ""
-  rust_log                 = "info"
+  db_host            = module.database.private_endpoint
+  db_port            = module.database.endpoint_port
+  db_name            = module.database.database_name
+  db_user            = module.database.database_user
+  db_password        = var.db_user_password
+  redis_host         = module.cache.redis_host
+  redis_port         = module.cache.redis_port
+  redis_use_tls      = module.cache.redis_use_tls
+  redis_password     = var.redis_password
+  s3_endpoint        = module.storage.s3_endpoint
+  s3_region          = var.region
+  s3_bucket          = module.storage.bucket_name
+  s3_public_endpoint = module.storage.s3_public_endpoint
+  s3_access_key      = module.storage.s3_access_key
+  s3_secret_key      = module.storage.s3_secret_key
+  queue_endpoint     = module.messaging.queue_endpoint
+  queue_region       = var.region
+  queue_name         = module.messaging.queue_name
+  sqs_access_key     = module.messaging.sqs_access_key
+  sqs_secret_key     = module.messaging.sqs_secret_key
+  paseto_access_key  = var.paseto_access_key
+  paseto_refresh_key = var.paseto_refresh_key
+  admin_token        = var.admin_token
+  rust_log           = "info"
 }
 
 # Observability Module
