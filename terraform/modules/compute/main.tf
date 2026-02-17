@@ -145,6 +145,23 @@ locals {
 # Compute Instances
 # ============================================================
 
+# Replacement triggers — when cloud-init changes (including image tag),
+# the corresponding instance is automatically recreated.
+resource "terraform_data" "api_replacement" {
+  count = var.enable_combined_mode ? 0 : var.api_instance_count
+  input = sha256(local.cloud_init_api)
+}
+
+resource "terraform_data" "combined_replacement" {
+  count = var.enable_combined_mode ? 1 : 0
+  input = sha256(local.cloud_init_combined)
+}
+
+resource "terraform_data" "worker_replacement" {
+  count = var.worker_instance_count
+  input = sha256(local.cloud_init_worker)
+}
+
 # API Instances (standard multi-instance mode)
 resource "scaleway_instance_server" "api" {
   count = var.enable_combined_mode ? 0 : var.api_instance_count
@@ -172,6 +189,7 @@ resource "scaleway_instance_server" "api" {
 
   lifecycle {
     create_before_destroy = true
+    replace_triggered_by  = [terraform_data.api_replacement[count.index]]
   }
 }
 
@@ -209,6 +227,7 @@ resource "scaleway_instance_server" "combined" {
 
   lifecycle {
     create_before_destroy = true
+    replace_triggered_by  = [terraform_data.combined_replacement[0]]
   }
 }
 
@@ -239,6 +258,7 @@ resource "scaleway_instance_server" "worker" {
 
   lifecycle {
     create_before_destroy = true
+    replace_triggered_by  = [terraform_data.worker_replacement[count.index]]
   }
 }
 
