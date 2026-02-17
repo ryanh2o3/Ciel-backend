@@ -49,6 +49,19 @@ resource "scaleway_domain_record" "root" {
   priority = null
 }
 
+# Build the list of domains that actually resolve to the LB
+locals {
+  # The common_name must be a domain that resolves to the LB.
+  # Prefer the API subdomain (always present when SSL is enabled).
+  ssl_common_name = "${var.api_subdomain}.${var.domain_name}"
+
+  ssl_sans = concat(
+    var.enable_root_dns ? [var.domain_name] : [],
+    var.enable_www_dns ? ["www.${var.domain_name}"] : [],
+    var.enable_cdn_dns ? ["${var.cdn_subdomain}.${var.domain_name}"] : [],
+  )
+}
+
 # SSL Certificate via Let's Encrypt (managed by Load Balancer)
 resource "scaleway_lb_certificate" "ssl" {
   count = var.enable_ssl ? 1 : 0
@@ -57,12 +70,8 @@ resource "scaleway_lb_certificate" "ssl" {
   name  = "${var.domain_name}-cert"
 
   letsencrypt {
-    common_name = var.domain_name
-    subject_alternative_name = [
-      "www.${var.domain_name}",
-      "${var.api_subdomain}.${var.domain_name}",
-      "${var.cdn_subdomain}.${var.domain_name}",
-    ]
+    common_name              = local.ssl_common_name
+    subject_alternative_name = local.ssl_sans
   }
 
   lifecycle {

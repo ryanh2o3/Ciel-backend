@@ -247,12 +247,12 @@ module "dns" {
   load_balancer_id = module.networking.load_balancer_id
   cdn_endpoint     = module.storage.cdn_endpoint
 
-  # Dev-specific settings
+  # Match prod DNS settings
   enable_api_dns  = true
-  enable_cdn_dns  = false
-  enable_www_dns  = false
-  enable_root_dns = false
-  enable_ssl      = true  # SSL terminated at LB via Let's Encrypt
+  enable_cdn_dns  = false  # No CDN in dev — no endpoint to CNAME to
+  enable_www_dns  = true
+  enable_root_dns = true
+  enable_ssl      = true
 }
 
 # ============================================================
