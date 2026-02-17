@@ -166,5 +166,8 @@ runcmd:
   - cd /opt/ciel && docker compose pull
   - cd /opt/ciel && docker compose up -d
 
+  # Wait for containers to settle, then dump diagnostics to serial console
+  - sleep 60 && echo "=== CONTAINER STATUS ===" && docker compose -f /opt/ciel/docker-compose.yml ps -a && echo "=== API LOGS ===" && docker compose -f /opt/ciel/docker-compose.yml logs --no-color --tail 50 api
+
   # Enable Docker to start on boot
   - systemctl enable docker
