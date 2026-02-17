@@ -33,10 +33,14 @@ write_files:
       #!/usr/bin/env bash
       set -euo pipefail
 
-      export SCW_ACCESS_KEY="${scw_access_key}"
-      export SCW_SECRET_KEY="${scw_secret_key}"
-      export SCW_DEFAULT_REGION="${scw_region}"
-      export SCW_DEFAULT_ZONE="${scw_zone}"
+      # Write scw CLI config so it doesn't look for a default config file
+      mkdir -p /root/.config/scw
+      cat > /root/.config/scw/config.yaml <<SCWCFG
+      access_key: ${scw_access_key}
+      secret_key: ${scw_secret_key}
+      default_region: ${scw_region}
+      default_zone: ${scw_zone}
+      SCWCFG
 
       fetch_secret() {
         scw secret version access "secret-id=$1" --output json | jq -r .data
