@@ -112,8 +112,7 @@ runcmd:
   - apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
 
   # Install Scaleway CLI
-  - curl -fsSL https://github.com/scaleway/scaleway-cli/releases/latest/download/scaleway-cli-linux-amd64 -o /usr/local/bin/scw
-  - chmod +x /usr/local/bin/scw
+  - curl -fsSL https://raw.githubusercontent.com/scaleway/scaleway-cli/master/scripts/get.sh | sh
 
   # Configure unattended upgrades
   - dpkg-reconfigure -f noninteractive unattended-upgrades
