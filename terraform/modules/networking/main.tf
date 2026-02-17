@@ -168,7 +168,6 @@ resource "scaleway_lb" "api" {
 
   private_network {
     private_network_id = scaleway_vpc_private_network.main.id
-    dhcp_config        = true
   }
 
   tags = concat(var.tags, ["environment:${var.environment}"])

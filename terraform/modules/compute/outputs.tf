@@ -17,10 +17,16 @@ output "api_instance_ids" {
 }
 
 output "api_instance_ips" {
-  description = "API instance private IPs"
+  description = "API instance private IPv4 addresses"
   value = var.enable_combined_mode ? (
-    [for s in scaleway_instance_server.combined : try(s.private_ips[0].address, null)]
-  ) : [for s in scaleway_instance_server.api : try(s.private_ips[0].address, null)]
+    [for s in scaleway_instance_server.combined : try(
+      [for ip in s.private_ips : ip.address if can(regex("^\\d+\\.\\d+\\.\\d+\\.\\d+$", ip.address))][0],
+      null
+    )]
+  ) : [for s in scaleway_instance_server.api : try(
+    [for ip in s.private_ips : ip.address if can(regex("^\\d+\\.\\d+\\.\\d+\\.\\d+$", ip.address))][0],
+    null
+  )]
 }
 
 output "api_instance_public_ips" {
@@ -36,8 +42,11 @@ output "worker_instance_ids" {
 }
 
 output "worker_instance_ips" {
-  description = "Polling worker instance private IPs (empty when using serverless worker)"
-  value       = [for s in scaleway_instance_server.worker : try(s.private_ips[0].address, null)]
+  description = "Polling worker instance private IPv4 addresses (empty when using serverless worker)"
+  value = [for s in scaleway_instance_server.worker : try(
+    [for ip in s.private_ips : ip.address if can(regex("^\\d+\\.\\d+\\.\\d+\\.\\d+$", ip.address))][0],
+    null
+  )]
 }
 
 # Serverless worker outputs
