@@ -74,6 +74,14 @@ resource "scaleway_lb_certificate" "ssl" {
     subject_alternative_name = local.ssl_sans
   }
 
+  # DNS records must resolve to the LB IP before Let's Encrypt validation
+  depends_on = [
+    scaleway_domain_record.api,
+    scaleway_domain_record.www,
+    scaleway_domain_record.root,
+    scaleway_domain_record.cdn,
+  ]
+
   lifecycle {
     create_before_destroy = true
   }
