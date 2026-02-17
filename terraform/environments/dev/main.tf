@@ -272,7 +272,7 @@ resource "scaleway_lb_backend" "api" {
   forward_port     = 8443
   server_ips       = module.compute.api_instance_ips
 
-  health_check_http {
+  health_check_https {
     uri    = "/health"
     method = "GET"
     code   = 200
