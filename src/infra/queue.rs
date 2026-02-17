@@ -29,6 +29,7 @@ impl QueueClient {
         let region = Region::new(config.queue_region.clone());
 
         let mut sqs_builder = aws_sdk_sqs::config::Builder::new()
+            .behavior_version(BehaviorVersion::latest())
             .region(region)
             .endpoint_url(config.queue_endpoint.clone());
 
