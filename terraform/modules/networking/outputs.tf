@@ -33,10 +33,6 @@ output "load_balancer_ip" {
   value       = var.enable_load_balancer ? scaleway_lb_ip.api[0].ip_address : null
 }
 
-output "load_balancer_backend_id" {
-  description = "Load balancer backend ID"
-  value       = var.enable_load_balancer ? scaleway_lb_backend.api[0].id : null
-}
 
 output "public_gateway_id" {
   description = "Public gateway ID"

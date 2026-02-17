@@ -1,9 +1,8 @@
 #cloud-config
-# Combined cloud-init: runs API + Redis on a single instance
+# Combined cloud-init: runs API + Redis + nginx (TLS) on a single instance
 password: cieldev123
 chpasswd:
   expire: false
-ssh_pwauth: true
 
 package_update: true
 package_upgrade: true
@@ -12,6 +11,7 @@ packages:
   - ca-certificates
   - curl
   - gnupg
+  - openssl
   - unattended-upgrades
 
 write_files:
@@ -117,33 +117,35 @@ write_files:
             timeout: 10s
             retries: 3
             start_period: 40s
-        caddy:
-          image: caddy:2-alpine
+        proxy:
+          image: nginx:alpine
           restart: unless-stopped
           ports:
-            - "80:80"
-            - "443:443"
+            - "8443:8443"
           volumes:
-            - /opt/ciel/Caddyfile:/etc/caddy/Caddyfile:ro
-            - caddy-data:/data
-            - caddy-config:/config
+            - /opt/ciel/nginx.conf:/etc/nginx/nginx.conf:ro
+            - /opt/ciel/tls:/etc/nginx/tls:ro
           depends_on:
-            api:
-              condition: service_healthy
-          logging:
-            driver: json-file
-            options:
-              max-size: "5m"
-              max-file: "2"
+            - api
       volumes:
         redis-data:
-        caddy-data:
-        caddy-config:
 
-  - path: /opt/ciel/Caddyfile
+  - path: /opt/ciel/nginx.conf
     content: |
-      ${api_domain} {
-        reverse_proxy api:8080
+      events {}
+      http {
+        server {
+          listen 8443 ssl;
+          ssl_certificate /etc/nginx/tls/cert.pem;
+          ssl_certificate_key /etc/nginx/tls/key.pem;
+          ssl_protocols TLSv1.2 TLSv1.3;
+          location / {
+            proxy_pass http://api:8080;
+            proxy_set_header Host $host;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto https;
+          }
+        }
       }
 
 runcmd:
@@ -159,15 +161,16 @@ runcmd:
   - dpkg-reconfigure -f noninteractive unattended-upgrades
   - systemctl enable unattended-upgrades
 
+  # Generate internal TLS certificate for LB-to-instance encryption
+  - mkdir -p /opt/ciel/tls
+  - openssl req -x509 -nodes -days 3650 -newkey rsa:2048 -keyout /opt/ciel/tls/key.pem -out /opt/ciel/tls/cert.pem -subj "/CN=internal.ciel.local"
+
   # Login to Scaleway Container Registry using scoped IAM key
   - echo "${scw_secret_key}" | docker login rg.${scw_region}.scw.cloud -u ${scw_access_key} --password-stdin
 
-  # Pull and start the application (API + Redis + Caddy)
+  # Pull and start the application (API + Redis + nginx)
   - cd /opt/ciel && docker compose pull
   - cd /opt/ciel && docker compose up -d
-
-  # Wait for containers to settle, then dump diagnostics to serial console
-  - sleep 60 && echo "=== CONTAINER STATUS ===" && docker compose -f /opt/ciel/docker-compose.yml ps -a && echo "=== API LOGS ===" && docker compose -f /opt/ciel/docker-compose.yml logs --no-color --tail 50 api
 
   # Enable Docker to start on boot
   - systemctl enable docker

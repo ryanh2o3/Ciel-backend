@@ -48,7 +48,6 @@ module "networking" {
   enable_public_gateway = true
   private_network_cidr  = "10.0.3.0/24"
   lb_type               = "LB-GP-S"
-  ssl_certificate_ids   = var.enable_dns ? module.dns[0].ssl_certificate_ids : []
   ssh_allowed_cidrs     = var.ssh_allowed_cidrs
 }
 
@@ -180,7 +179,6 @@ module "compute" {
   private_network_id       = module.networking.private_network_id
   api_security_group_id    = module.networking.api_security_group_id
   worker_security_group_id = module.networking.worker_security_group_id
-  load_balancer_backend_id = module.networking.load_balancer_backend_id
 
   # Application configuration from other modules
   db_host            = module.database.private_endpoint
@@ -244,6 +242,78 @@ module "dns" {
   enable_www_dns  = true
   enable_root_dns = true
   enable_ssl      = true
+}
+
+# ============================================================
+# Load Balancer Backend / Frontends / ACLs
+# Defined here (not in networking module) to avoid circular
+# dependency: networking creates the LB, compute creates
+# instances, and the root module wires them together.
+# ============================================================
+
+resource "scaleway_lb_backend" "api" {
+  count = var.enable_dns ? 1 : 0
+
+  lb_id            = module.networking.load_balancer_id
+  name             = "ciel-backend-prod"
+  forward_protocol = "http"
+  ssl_bridging     = true
+  forward_port     = 8443
+  server_ips       = module.compute.api_instance_ips
+
+  health_check_http {
+    uri    = "/health"
+    method = "GET"
+    code   = 200
+  }
+
+  health_check_timeout     = "5s"
+  health_check_delay       = "10s"
+  health_check_max_retries = 3
+
+  sticky_sessions             = "cookie"
+  sticky_sessions_cookie_name = "ciel_session"
+}
+
+resource "scaleway_lb_frontend" "http" {
+  count = var.enable_dns ? 1 : 0
+
+  lb_id        = module.networking.load_balancer_id
+  backend_id   = scaleway_lb_backend.api[0].id
+  name         = "ciel-http-prod"
+  inbound_port = 80
+}
+
+resource "scaleway_lb_acl" "http_to_https_redirect" {
+  count = var.enable_dns ? 1 : 0
+
+  frontend_id = scaleway_lb_frontend.http[0].id
+  name        = "ciel-http-redirect-prod"
+  index       = 1
+
+  action {
+    type = "redirect"
+    redirect {
+      type   = "scheme"
+      target = "https"
+      code   = 301
+    }
+  }
+
+  match {
+    http_filter       = "path_begin"
+    http_filter_value = ["*"]
+  }
+}
+
+resource "scaleway_lb_frontend" "https" {
+  count = var.enable_dns ? 1 : 0
+
+  lb_id           = module.networking.load_balancer_id
+  backend_id      = scaleway_lb_backend.api[0].id
+  name            = "ciel-https-prod"
+  inbound_port    = 443
+  certificate_ids = module.dns[0].ssl_certificate_ids
 }
 
 # API Security Module (Optimized for Mobile Apps)

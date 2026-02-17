@@ -79,7 +79,6 @@ locals {
     scw_secret_key   = scaleway_iam_api_key.runtime.secret_key
     scw_region       = var.region
     http_addr        = var.http_addr
-    api_domain       = var.api_domain
     database_url     = local.database_url
     redis_url        = local.redis_url_combined
     redis_password   = var.redis_password
@@ -180,12 +179,7 @@ resource "scaleway_instance_server" "api" {
 }
 
 # Combined Instance (API + Redis on one box)
-# Flexible IP for combined instance (direct public access)
-resource "scaleway_instance_ip" "combined" {
-  count = var.enable_combined_mode ? 1 : 0
-  zone  = var.zone
-}
-
+# No public IP — LB handles inbound; public gateway handles outbound via NAT.
 resource "scaleway_instance_server" "combined" {
   count = var.enable_combined_mode ? 1 : 0
 
@@ -193,7 +187,6 @@ resource "scaleway_instance_server" "combined" {
   type  = var.combined_instance_type
   image = "debian_bookworm"
   zone  = var.zone
-  ip_id = scaleway_instance_ip.combined[0].id
 
   security_group_id = var.api_security_group_id
 

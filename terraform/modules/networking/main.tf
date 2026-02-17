@@ -74,6 +74,14 @@ resource "scaleway_instance_security_group" "api" {
     ip_range = var.private_network_cidr
   }
 
+  # Allow HTTP from load balancer (internal, for combined/dev mode without SSL bridging)
+  inbound_rule {
+    action   = "accept"
+    port     = 8080
+    protocol = "TCP"
+    ip_range = var.private_network_cidr
+  }
+
   # Allow HTTP from public internet (for Caddy / Let's Encrypt ACME challenge)
   dynamic "inbound_rule" {
     for_each = var.enable_public_https ? [1] : []
@@ -81,6 +89,7 @@ resource "scaleway_instance_security_group" "api" {
       action   = "accept"
       port     = 80
       protocol = "TCP"
+      ip_range = "0.0.0.0/0"
     }
   }
 
@@ -91,6 +100,7 @@ resource "scaleway_instance_security_group" "api" {
       action   = "accept"
       port     = 443
       protocol = "TCP"
+      ip_range = "0.0.0.0/0"
     }
   }
 
@@ -169,96 +179,6 @@ resource "scaleway_lb_ip" "api" {
   count = var.enable_load_balancer ? 1 : 0
 
   zone = var.zone
-}
-
-# Load Balancer Backend
-resource "scaleway_lb_backend" "api" {
-  count = var.enable_load_balancer ? 1 : 0
-
-  lb_id            = scaleway_lb.api[0].id
-  name             = "${var.app_name}-backend-${var.environment}"
-  forward_protocol = "http"
-  ssl_bridging     = true
-  forward_port     = 8443
-  server_ips       = var.backend_server_ips
-
-  health_check_http {
-    uri    = var.health_check_path
-    method = "GET"
-    code   = 200
-  }
-
-  health_check_timeout  = "5s"
-  health_check_delay    = "10s"
-  health_check_max_retries = 3
-
-  sticky_sessions             = "cookie"
-  sticky_sessions_cookie_name = "ciel_session"
-}
-
-# Load Balancer Frontend - HTTP (redirects to HTTPS via ACL)
-resource "scaleway_lb_frontend" "http" {
-  count = var.enable_load_balancer ? 1 : 0
-
-  lb_id        = scaleway_lb.api[0].id
-  backend_id   = scaleway_lb_backend.api[0].id
-  name         = "${var.app_name}-http-${var.environment}"
-  inbound_port = 80
-}
-
-resource "scaleway_lb_acl" "http_to_https_redirect" {
-  count = var.enable_load_balancer && length(var.ssl_certificate_ids) > 0 ? 1 : 0
-
-  frontend_id = scaleway_lb_frontend.http[0].id
-  name        = "${var.app_name}-http-redirect-${var.environment}"
-  index       = 1
-
-  action {
-    type = "redirect"
-    redirect {
-      type   = "scheme"
-      target = "https"
-      code   = 301
-    }
-  }
-
-  match {
-    http_filter       = "path_begin"
-    http_filter_value = ["*"]
-  }
-}
-
-# Load Balancer Frontend - HTTPS
-resource "scaleway_lb_frontend" "https" {
-  count = var.enable_load_balancer && length(var.ssl_certificate_ids) > 0 ? 1 : 0
-
-  lb_id           = scaleway_lb.api[0].id
-  backend_id      = scaleway_lb_backend.api[0].id
-  name            = "${var.app_name}-https-${var.environment}"
-  inbound_port    = 443
-  certificate_ids = var.ssl_certificate_ids
-}
-
-locals {
-  lb_frontend_id = var.enable_load_balancer ? (
-    length(scaleway_lb_frontend.https) > 0 ? scaleway_lb_frontend.https[0].id : scaleway_lb_frontend.http[0].id
-  ) : null
-}
-
-resource "scaleway_lb_acl" "blocked_ips" {
-  count = var.enable_load_balancer && var.enable_basic_waf ? length(var.blocked_ip_ranges) : 0
-
-  frontend_id = local.lb_frontend_id
-  name        = "${var.app_name}-block-${count.index}-${var.environment}"
-  index       = count.index + 1
-
-  action {
-    type = "deny"
-  }
-
-  match {
-    ip_subnet = [var.blocked_ip_ranges[count.index]]
-  }
 }
 
 # Bastion host (optional)

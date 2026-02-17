@@ -46,10 +46,10 @@ module "networking" {
   tags                 = local.tags
 
   # Dev-specific settings
-  enable_load_balancer  = false  # No LB needed for dev
+  enable_load_balancer  = true
   enable_bastion        = true   # Allow SSH access for debugging
   enable_public_gateway = true
-  enable_public_https   = true   # Caddy handles SSL directly on the instance
+  enable_public_https   = false  # SSL terminated at LB, not on instance
   private_network_cidr  = "10.0.1.0/24"
   ssh_allowed_cidrs     = var.ssh_allowed_cidrs
 }
@@ -171,7 +171,6 @@ module "compute" {
   enable_combined_mode     = true
   combined_instance_type   = "DEV1-M"
   embedded_redis_maxmemory_mb = 512
-  api_domain               = "api.${var.domain_name}"
 
   # No separate API/worker instances
   api_instance_count       = 0
@@ -195,7 +194,6 @@ module "compute" {
   private_network_id       = module.networking.private_network_id
   api_security_group_id    = module.networking.api_security_group_id
   worker_security_group_id = module.networking.worker_security_group_id
-  load_balancer_backend_id = null  # No LB in dev
 
   # Application configuration from other modules
   db_host            = module.database.private_endpoint
@@ -236,7 +234,7 @@ module "observability" {
   enable_alerts = false  # No alerts for dev
 }
 
-# DNS Module — points api.ciel-social.eu at the combined instance's public IP
+# DNS Module — points api.ciel-social.eu at the load balancer IP
 module "dns" {
   source = "../../modules/dns"
 
@@ -245,7 +243,8 @@ module "dns" {
   domain_name      = var.domain_name
   api_subdomain    = "api"
   cdn_subdomain    = "dev-media"
-  load_balancer_ip = module.compute.api_instance_public_ips[0]  # Combined instance flexible IP
+  load_balancer_ip = module.networking.load_balancer_ip
+  load_balancer_id = module.networking.load_balancer_id
   cdn_endpoint     = module.storage.cdn_endpoint
 
   # Dev-specific settings
@@ -253,5 +252,77 @@ module "dns" {
   enable_cdn_dns  = false
   enable_www_dns  = false
   enable_root_dns = false
-  enable_ssl      = false  # Caddy handles SSL on the instance
+  enable_ssl      = true  # SSL terminated at LB via Let's Encrypt
+}
+
+# ============================================================
+# Load Balancer Backend / Frontends / ACLs
+# Defined here (not in networking module) to avoid circular
+# dependency: networking creates the LB, compute creates
+# instances, and the root module wires them together.
+# ============================================================
+
+resource "scaleway_lb_backend" "api" {
+  count = var.enable_dns ? 1 : 0
+
+  lb_id            = module.networking.load_balancer_id
+  name             = "ciel-backend-dev"
+  forward_protocol = "http"
+  ssl_bridging     = true
+  forward_port     = 8443
+  server_ips       = module.compute.api_instance_ips
+
+  health_check_http {
+    uri    = "/health"
+    method = "GET"
+    code   = 200
+  }
+
+  health_check_timeout     = "5s"
+  health_check_delay       = "10s"
+  health_check_max_retries = 3
+
+  sticky_sessions             = "cookie"
+  sticky_sessions_cookie_name = "ciel_session"
+}
+
+resource "scaleway_lb_frontend" "http" {
+  count = var.enable_dns ? 1 : 0
+
+  lb_id        = module.networking.load_balancer_id
+  backend_id   = scaleway_lb_backend.api[0].id
+  name         = "ciel-http-dev"
+  inbound_port = 80
+}
+
+resource "scaleway_lb_acl" "http_to_https_redirect" {
+  count = var.enable_dns ? 1 : 0
+
+  frontend_id = scaleway_lb_frontend.http[0].id
+  name        = "ciel-http-redirect-dev"
+  index       = 1
+
+  action {
+    type = "redirect"
+    redirect {
+      type   = "scheme"
+      target = "https"
+      code   = 301
+    }
+  }
+
+  match {
+    http_filter       = "path_begin"
+    http_filter_value = ["*"]
+  }
+}
+
+resource "scaleway_lb_frontend" "https" {
+  count = var.enable_dns ? 1 : 0
+
+  lb_id           = module.networking.load_balancer_id
+  backend_id      = scaleway_lb_backend.api[0].id
+  name            = "ciel-https-dev"
+  inbound_port    = 443
+  certificate_ids = module.dns[0].ssl_certificate_ids
 }

@@ -38,17 +38,6 @@ variable "lb_type" {
   default     = "LB-S"
 }
 
-variable "enable_basic_waf" {
-  description = "Enable basic L7 ACL protections on the load balancer"
-  type        = bool
-  default     = true
-}
-
-variable "blocked_ip_ranges" {
-  description = "CIDR ranges to block at the load balancer (basic WAF/DDoS mitigation)"
-  type        = list(string)
-  default     = []
-}
 
 variable "enable_bastion" {
   description = "Enable bastion host for SSH access"
@@ -92,23 +81,7 @@ variable "enable_public_https" {
   default     = false
 }
 
-variable "ssl_certificate_ids" {
-  description = "SSL certificate IDs for HTTPS termination"
-  type        = list(string)
-  default     = []
-}
 
-variable "health_check_path" {
-  description = "Health check endpoint path"
-  type        = string
-  default     = "/health"
-}
-
-variable "backend_server_ips" {
-  description = "List of backend server IPs to register with the load balancer"
-  type        = list(string)
-  default     = []
-}
 
 variable "reverse_dns_hostname" {
   description = "Hostname for reverse DNS on the public gateway IP (e.g., api.ciel-social.eu)"

@@ -168,11 +168,6 @@ variable "worker_security_group_id" {
   default     = ""
 }
 
-variable "load_balancer_backend_id" {
-  description = "Load balancer backend ID for registering API instances"
-  type        = string
-  default     = null
-}
 
 # Environment Variables
 variable "db_host" {
@@ -306,11 +301,6 @@ variable "admin_token" {
   sensitive   = true
 }
 
-variable "api_domain" {
-  description = "Public domain for Caddy auto-HTTPS (e.g., dev-api.ciel-social.eu). Required in combined mode."
-  type        = string
-  default     = ""
-}
 
 variable "http_addr" {
   description = "HTTP listen address"
