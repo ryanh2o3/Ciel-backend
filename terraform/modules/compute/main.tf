@@ -226,8 +226,7 @@ resource "scaleway_instance_server" "combined" {
   ])
 
   lifecycle {
-    create_before_destroy = true
-    replace_triggered_by  = [terraform_data.combined_replacement[0]]
+    replace_triggered_by = [terraform_data.combined_replacement[0]]
   }
 }
 
