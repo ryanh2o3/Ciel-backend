@@ -140,6 +140,11 @@ variable "serverless_s3_secret_key" {
 }
 
 # Container Image
+variable "container_image" {
+  description = "Full container image path without tag (e.g., rg.fr-par.scw.cloud/ciel-social/ciel-backend)"
+  type        = string
+}
+
 variable "container_image_tag" {
   description = "Docker image tag to deploy"
   type        = string

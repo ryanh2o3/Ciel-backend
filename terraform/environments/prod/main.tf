@@ -173,6 +173,7 @@ module "compute" {
   worker_instance_type     = "GP1-S"
 
   # Use production container image with version tag
+  container_image          = "rg.fr-par.scw.cloud/ciel-social/ciel-backend"
   container_image_tag      = var.container_image_tag
 
   # Network dependencies

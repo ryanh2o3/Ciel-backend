@@ -98,7 +98,7 @@ write_files:
     content: |
       services:
         api:
-          image: ${registry_endpoint}/${app_name}:${image_tag}
+          image: ${container_image}:${image_tag}
           restart: unless-stopped
           env_file:
             - .env
@@ -167,7 +167,7 @@ runcmd:
   - openssl req -x509 -nodes -days 3650 -newkey rsa:2048 -keyout /opt/ciel/tls/key.pem -out /opt/ciel/tls/cert.pem -subj \"/CN=internal.ciel.local\"
 
   # Login to Scaleway Container Registry using scoped IAM key
-  - echo "${scw_secret_key}" | docker login ${registry_endpoint} -u ${scw_access_key} --password-stdin
+  - echo "${scw_secret_key}" | docker login rg.${scw_region}.scw.cloud -u ${scw_access_key} --password-stdin
 
   # Pull and start the application
   - cd /opt/ciel && docker compose pull

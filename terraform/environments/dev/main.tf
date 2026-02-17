@@ -188,6 +188,7 @@ module "compute" {
   serverless_s3_secret_key    = module.storage.s3_secret_key
 
   # Container image
+  container_image          = "rg.fr-par.scw.cloud/ciel-social/ciel-backend"
   container_image_tag      = var.container_image_tag
 
   # Network dependencies

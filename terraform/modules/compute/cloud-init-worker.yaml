@@ -86,7 +86,7 @@ write_files:
     content: |
       services:
         worker:
-          image: ${registry_endpoint}/${app_name}:${image_tag}
+          image: ${container_image}:${image_tag}
           restart: unless-stopped
           env_file:
             - .env
@@ -123,7 +123,7 @@ runcmd:
   - /opt/ciel/fetch-secrets.sh
 
   # Login to Scaleway Container Registry using scoped IAM key
-  - echo "${scw_secret_key}" | docker login ${registry_endpoint} -u ${scw_access_key} --password-stdin
+  - echo "${scw_secret_key}" | docker login rg.${scw_region}.scw.cloud -u ${scw_access_key} --password-stdin
 
   # Pull and start the application
   - cd /opt/ciel && docker compose pull

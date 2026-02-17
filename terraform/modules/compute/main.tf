@@ -38,9 +38,8 @@ resource "scaleway_iam_api_key" "runtime" {
 # Standard API-only cloud-init (multi-instance mode)
 locals {
   cloud_init_api = !var.enable_combined_mode ? templatefile("${path.module}/cloud-init-api.yaml", {
-    app_name                   = var.app_name
+    container_image            = var.container_image
     image_tag                  = var.container_image_tag
-    registry_endpoint          = scaleway_registry_namespace.main.endpoint
     scw_access_key             = scaleway_iam_api_key.runtime.access_key
     scw_secret_key             = scaleway_iam_api_key.runtime.secret_key
     scw_region                 = var.region
@@ -76,9 +75,8 @@ locals {
 # Combined cloud-init: API + Redis on one instance
 locals {
   cloud_init_combined = var.enable_combined_mode ? templatefile("${path.module}/cloud-init-combined.yaml", {
-    app_name                   = var.app_name
+    container_image            = var.container_image
     image_tag                  = var.container_image_tag
-    registry_endpoint          = scaleway_registry_namespace.main.endpoint
     scw_access_key             = scaleway_iam_api_key.runtime.access_key
     scw_secret_key             = scaleway_iam_api_key.runtime.secret_key
     scw_region                 = var.region
@@ -113,9 +111,8 @@ locals {
 # Cloud-init template for Worker instances (legacy polling mode)
 locals {
   cloud_init_worker = var.worker_instance_count > 0 ? templatefile("${path.module}/cloud-init-worker.yaml", {
-    app_name                   = var.app_name
+    container_image            = var.container_image
     image_tag                  = var.container_image_tag
-    registry_endpoint          = scaleway_registry_namespace.main.endpoint
     scw_access_key             = scaleway_iam_api_key.runtime.access_key
     scw_secret_key             = scaleway_iam_api_key.runtime.secret_key
     scw_region                 = var.region
@@ -262,7 +259,7 @@ resource "scaleway_container" "media_processor" {
 
   name           = "media-processor"
   namespace_id   = scaleway_container_namespace.worker[0].id
-  registry_image = "${scaleway_registry_namespace.main.endpoint}/${var.app_name}:${var.container_image_tag}"
+  registry_image = "${var.container_image}:${var.container_image_tag}"
   port           = 8080
   cpu_limit      = var.serverless_worker_cpu
   memory_limit   = var.serverless_worker_memory
