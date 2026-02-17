@@ -2,6 +2,7 @@ use anyhow::{anyhow, Result};
 use aws_config::meta::region::RegionProviderChain;
 use aws_config::BehaviorVersion;
 use aws_config::Region;
+use aws_sdk_sqs::config::Credentials;
 use aws_sdk_sqs::error::SdkError;
 use aws_sdk_sqs::Client;
 use serde_json;
@@ -25,18 +26,32 @@ pub struct ReceivedJob {
 
 impl QueueClient {
     pub async fn new(config: &AppConfig) -> Result<Self> {
-        let region_provider = RegionProviderChain::first_try(Region::new(config.queue_region.clone()));
-        let shared_config = aws_config::defaults(BehaviorVersion::latest())
-            .region(region_provider)
-            .load()
-            .await;
+        let region = Region::new(config.queue_region.clone());
 
-        let mut sqs_builder = aws_sdk_sqs::config::Builder::from(&shared_config)
-            .region(shared_config.region().cloned())
+        let mut sqs_builder = aws_sdk_sqs::config::Builder::new()
+            .region(region)
             .endpoint_url(config.queue_endpoint.clone());
-        if let Some(provider) = shared_config.credentials_provider() {
-            sqs_builder = sqs_builder.credentials_provider(provider);
+
+        // Use explicit SQS credentials if provided, otherwise fall back to default chain
+        if !config.sqs_access_key.is_empty() {
+            sqs_builder = sqs_builder.credentials_provider(Credentials::new(
+                &config.sqs_access_key,
+                &config.sqs_secret_key,
+                None,
+                None,
+                "env",
+            ));
+        } else {
+            let region_provider = RegionProviderChain::first_try(Region::new(config.queue_region.clone()));
+            let shared_config = aws_config::defaults(BehaviorVersion::latest())
+                .region(region_provider)
+                .load()
+                .await;
+            if let Some(provider) = shared_config.credentials_provider() {
+                sqs_builder = sqs_builder.credentials_provider(provider);
+            }
         }
+
         let sqs_config = sqs_builder.build();
 
         let client = Client::from_conf(sqs_config);
