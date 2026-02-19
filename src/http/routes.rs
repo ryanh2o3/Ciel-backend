@@ -95,6 +95,7 @@ pub fn moderation() -> Router<AppState> {
             post(handlers::takedown_comment),
         )
         .route("/moderation/audit", get(handlers::list_moderation_audit))
+        .route("/admin/invites", post(handlers::admin_create_invite))
 }
 
 pub fn search() -> Router<AppState> {

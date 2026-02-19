@@ -16,7 +16,7 @@ pub struct InviteService {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct InviteCode {
     pub code: String,
-    pub created_by: Uuid,
+    pub created_by: Option<Uuid>,
     pub used_by: Option<Uuid>,
     #[serde(with = "time::serde::rfc3339")]
     pub created_at: OffsetDateTime,
@@ -114,13 +114,43 @@ impl InviteService {
 
         Ok(InviteCode {
             code,
-            created_by: user_id,
+            created_by: Some(user_id),
             used_by: None,
             created_at: OffsetDateTime::now_utc(),
             used_at: None,
             expires_at,
             is_valid: true,
             invite_type: "standard".to_string(),
+            use_count: 0,
+            max_uses: 1,
+        })
+    }
+
+    /// Generate an admin invite code (no owning user required)
+    pub async fn create_admin_invite(&self, days_valid: i64) -> Result<InviteCode> {
+        let code = self.generate_unique_code().await?;
+        let expires_at = OffsetDateTime::now_utc() + time::Duration::days(days_valid);
+
+        sqlx::query(
+            "INSERT INTO invite_codes (code, created_by, expires_at, invite_type) \
+             VALUES ($1, NULL, $2, 'admin')",
+        )
+        .bind(&code)
+        .bind(expires_at)
+        .execute(self.db.pool())
+        .await?;
+
+        tracing::info!(code = &code, "Admin invite code created");
+
+        Ok(InviteCode {
+            code,
+            created_by: None,
+            used_by: None,
+            created_at: OffsetDateTime::now_utc(),
+            used_at: None,
+            expires_at,
+            is_valid: true,
+            invite_type: "admin".to_string(),
             use_count: 0,
             max_uses: 1,
         })
@@ -155,7 +185,7 @@ impl InviteService {
 
     /// Validate and consume an invite code during signup
     #[allow(dead_code)]
-    pub async fn consume_invite(&self, code: &str, new_user_id: Uuid) -> Result<Uuid> {
+    pub async fn consume_invite(&self, code: &str, new_user_id: Uuid) -> Result<Option<Uuid>> {
         let mut tx = self.db.pool().begin().await?;
         let created_by = self.consume_invite_with_tx(code, new_user_id, &mut tx).await?;
         tx.commit().await?;
@@ -167,7 +197,7 @@ impl InviteService {
         code: &str,
         new_user_id: Uuid,
         tx: &mut Transaction<'_, Postgres>,
-    ) -> Result<Uuid> {
+    ) -> Result<Option<Uuid>> {
         // Fetch and validate invite with row lock
         let row = sqlx::query(
             "SELECT code, created_by, is_valid, expires_at, use_count, max_uses \
@@ -185,7 +215,7 @@ impl InviteService {
         let expires_at: OffsetDateTime = row.get("expires_at");
         let use_count: i32 = row.get("use_count");
         let max_uses: i32 = row.get("max_uses");
-        let created_by: Uuid = row.get("created_by");
+        let created_by: Option<Uuid> = row.get("created_by");
 
         // Validation checks
         if !is_valid {
@@ -216,30 +246,31 @@ impl InviteService {
         .execute(&mut **tx)
         .await?;
 
-        // Record relationship
-        sqlx::query(
-            "INSERT INTO invite_relationships (inviter_id, invitee_id, invite_code) \
-             VALUES ($1, $2, $3)",
-        )
-        .bind(created_by)
-        .bind(new_user_id)
-        .bind(code)
-        .execute(&mut **tx)
-        .await?;
+        // Record relationship + reward inviter (skip for admin/system invites)
+        if let Some(inviter_id) = created_by {
+            sqlx::query(
+                "INSERT INTO invite_relationships (inviter_id, invitee_id, invite_code) \
+                 VALUES ($1, $2, $3)",
+            )
+            .bind(inviter_id)
+            .bind(new_user_id)
+            .bind(code)
+            .execute(&mut **tx)
+            .await?;
 
-        // Update inviter's successful invite count and reward with trust points
-        sqlx::query(
-            "UPDATE user_trust_scores \
-             SET successful_invites = successful_invites + 1, \
-                 trust_points = trust_points + 10 \
-             WHERE user_id = $1",
-        )
-        .bind(created_by)
-        .execute(&mut **tx)
-        .await?;
+            sqlx::query(
+                "UPDATE user_trust_scores \
+                 SET successful_invites = successful_invites + 1, \
+                     trust_points = trust_points + 10 \
+                 WHERE user_id = $1",
+            )
+            .bind(inviter_id)
+            .execute(&mut **tx)
+            .await?;
+        }
 
         tracing::info!(
-            inviter_id = %created_by,
+            inviter_id = ?created_by,
             invitee_id = %new_user_id,
             code = code,
             "Invite code consumed"
@@ -266,7 +297,7 @@ impl InviteService {
             .into_iter()
             .map(|row| InviteCode {
                 code: row.get("code"),
-                created_by: row.get("created_by"),
+                created_by: row.get::<Option<Uuid>, _>("created_by"),
                 used_by: row.get("used_by"),
                 created_at: row.get("created_at"),
                 used_at: row.get("used_at"),

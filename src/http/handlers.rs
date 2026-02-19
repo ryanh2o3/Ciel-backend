@@ -1877,6 +1877,30 @@ pub async fn revoke_invite(
     }
 }
 
+// Admin: create invite code without an existing user
+pub async fn admin_create_invite(
+    _admin: AdminToken,
+    State(state): State<AppState>,
+    Json(payload): Json<CreateInviteRequest>,
+) -> Result<Json<crate::app::invites::InviteCode>, AppError> {
+    let days = payload.days_valid;
+    if days < 1 || days > 365 {
+        return Err(AppError::bad_request("days_valid must be between 1 and 365"));
+    }
+
+    let service = crate::app::invites::InviteService::new(state.db.clone());
+
+    let invite = service
+        .create_admin_invite(days)
+        .await
+        .map_err(|err| {
+            tracing::error!(error = ?err, "failed to create admin invite");
+            AppError::internal("failed to create admin invite")
+        })?;
+
+    Ok(Json(invite))
+}
+
 // ============================================================================
 // Story Handlers
 // ============================================================================
