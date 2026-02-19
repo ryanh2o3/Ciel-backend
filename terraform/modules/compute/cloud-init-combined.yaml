@@ -149,20 +149,6 @@ write_files:
       }
 
 runcmd:
-  # Wait for gateway DHCP to assign an IPv4 and provide outbound connectivity.
-  # Without a public IP the instance depends on the VPC gateway for NAT,
-  # which may not be ready when cloud-init reaches runcmd.
-  - |
-    echo "Waiting for network connectivity..."
-    for i in $(seq 1 60); do
-      if getent hosts deb.debian.org >/dev/null 2>&1; then
-        echo "DNS resolution working (attempt $i)"
-        break
-      fi
-      echo "No network yet... attempt $i"
-      sleep 5
-    done
-
   # Install Docker
   - install -m 0755 -d /etc/apt/keyrings
   - curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
