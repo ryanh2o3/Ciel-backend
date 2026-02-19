@@ -272,11 +272,9 @@ resource "scaleway_lb_backend" "api" {
   forward_port     = 8443
   server_ips       = module.compute.api_instance_ips
 
-  health_check_https {
-    uri    = "/health"
-    method = "GET"
-    code   = 200
-  }
+  ignore_ssl_server_verify = true  # Backend uses self-signed TLS cert
+
+  health_check_tcp {}
 
   health_check_timeout     = "5s"
   health_check_delay       = "10s"
