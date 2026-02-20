@@ -52,12 +52,12 @@ resource "scaleway_rdb_user" "app" {
   is_admin    = false
 }
 
-# Migration User (admin — runs DDL migrations at deploy time)
+# Migration User (runs DDL migrations at deploy time — not a superuser)
 resource "scaleway_rdb_user" "migration" {
   instance_id = scaleway_rdb_instance.main.id
   name        = "${var.db_user}_migrate"
   password    = var.db_admin_password
-  is_admin    = true
+  is_admin    = false
 }
 
 # Privileges for application user
@@ -70,6 +70,19 @@ resource "scaleway_rdb_privilege" "app" {
   depends_on = [
     scaleway_rdb_database.main,
     scaleway_rdb_user.app
+  ]
+}
+
+# Privileges for migration user (full DDL)
+resource "scaleway_rdb_privilege" "migration" {
+  instance_id   = scaleway_rdb_instance.main.id
+  database_name = scaleway_rdb_database.main.name
+  user_name     = scaleway_rdb_user.migration.name
+  permission    = "all"
+
+  depends_on = [
+    scaleway_rdb_database.main,
+    scaleway_rdb_user.migration
   ]
 }
 
