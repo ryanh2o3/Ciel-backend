@@ -89,14 +89,7 @@ impl MediaService {
             })
             .collect();
 
-        let mut upload_url = presigned.uri().to_string();
-
-        if let Some(ref public_endpoint) = self.s3_public_endpoint {
-            match rewrite_presigned_url(&upload_url, public_endpoint) {
-                Ok(rewritten) => upload_url = rewritten,
-                Err(err) => tracing::warn!(error = ?err, "failed to rewrite presigned upload URL"),
-            }
-        }
+        let upload_url = presigned.uri().to_string();
 
         Ok(UploadIntent {
             upload_id,
