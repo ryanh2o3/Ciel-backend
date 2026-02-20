@@ -345,6 +345,29 @@ impl InviteService {
         })
     }
 
+    /// Validate an invite code without consuming it
+    pub async fn validate_invite(&self, code: &str) -> Result<bool> {
+        let row = sqlx::query(
+            "SELECT is_valid, expires_at, use_count, max_uses \
+             FROM invite_codes \
+             WHERE code = $1",
+        )
+        .bind(code)
+        .fetch_optional(self.db.pool())
+        .await?;
+
+        let Some(row) = row else {
+            return Ok(false);
+        };
+
+        let is_valid: bool = row.get("is_valid");
+        let expires_at: OffsetDateTime = row.get("expires_at");
+        let use_count: i32 = row.get("use_count");
+        let max_uses: i32 = row.get("max_uses");
+
+        Ok(is_valid && expires_at > OffsetDateTime::now_utc() && use_count < max_uses)
+    }
+
     /// Revoke an invite code (mark as invalid)
     pub async fn revoke_invite(&self, code: &str, user_id: Uuid) -> Result<bool> {
         let result = sqlx::query(

@@ -15,6 +15,7 @@ pub fn auth() -> Router<AppState> {
         .route("/auth/refresh", post(handlers::refresh_token))
         .route("/auth/revoke", post(handlers::revoke_token))
         .route("/auth/me", get(handlers::get_current_user))
+        .route("/invites/validate/:code", get(handlers::validate_invite))
 }
 
 pub fn users() -> Router<AppState> {

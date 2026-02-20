@@ -1877,6 +1877,23 @@ pub async fn revoke_invite(
     }
 }
 
+pub async fn validate_invite(
+    Path(code): Path<String>,
+    State(state): State<AppState>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let service = crate::app::invites::InviteService::new(state.db.clone());
+
+    let is_valid = service
+        .validate_invite(&code)
+        .await
+        .map_err(|err| {
+            tracing::error!(error = ?err, "failed to validate invite");
+            AppError::internal("failed to validate invite")
+        })?;
+
+    Ok(Json(serde_json::json!({ "is_valid": is_valid })))
+}
+
 // Admin: create invite code without an existing user
 pub async fn admin_create_invite(
     _admin: AdminToken,
