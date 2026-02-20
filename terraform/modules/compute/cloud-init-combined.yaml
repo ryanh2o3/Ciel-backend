@@ -55,7 +55,8 @@ write_files:
 
   - path: /opt/ciel/migration_db_url.txt
     permissions: '0600'
-    content: ${migration_database_url}
+    content: |
+      ${migration_database_url}
 
   - path: /opt/ciel/redis_password.txt
     permissions: '0600'
