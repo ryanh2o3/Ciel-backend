@@ -16,6 +16,7 @@ RUN useradd -r -s /bin/false ciel
 
 WORKDIR /app
 COPY --from=builder /app/target/release/ciel /app/ciel
+COPY migrations ./migrations
 
 USER ciel
 

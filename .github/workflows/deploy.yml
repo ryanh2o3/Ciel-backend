@@ -7,6 +7,7 @@ on:
       - "src/**"
       - "Cargo.toml"
       - "Dockerfile"
+      - "migrations/**"
       - "terraform/**"
       - ".github/workflows/deploy.yml"
   pull_request:
@@ -15,6 +16,7 @@ on:
       - "src/**"
       - "Cargo.toml"
       - "Dockerfile"
+      - "migrations/**"
       - "terraform/**"
       - ".github/workflows/deploy.yml"
   workflow_dispatch:
@@ -224,69 +226,12 @@ jobs:
           AWS_ACCESS_KEY_ID: ${{ secrets.SCW_ACCESS_KEY }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.SCW_SECRET_KEY }}
 
-  database-migrations:
-    name: Run Database Migrations
-    needs: terraform-apply
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        environment: [dev]
-      max-parallel: 1
-    environment: ${{ matrix.environment }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Terraform
-        uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_version: 1.14.5
-          terraform_wrapper: false # Disable wrapper to get raw output
-
-      - name: Get database URL from Terraform output
-        id: db
-        working-directory: terraform/environments/${{ matrix.environment }}
-        run: |
-          terraform init \
-            -backend-config="access_key=${{ secrets.SCW_ACCESS_KEY }}" \
-            -backend-config="secret_key=${{ secrets.SCW_SECRET_KEY }}"
-          DATABASE_URL=$(terraform output -raw database_url)
-          echo "::add-mask::$DATABASE_URL"
-          echo "database_url=$DATABASE_URL" >> $GITHUB_OUTPUT
-        env:
-          TF_VAR_db_admin_password: ${{ secrets.DB_ADMIN_PASSWORD }}
-          TF_VAR_db_user_password: ${{ secrets.DB_USER_PASSWORD }}
-          TF_VAR_redis_password: ${{ secrets.REDIS_PASSWORD }}
-          TF_VAR_paseto_access_key: ${{ secrets.PASETO_ACCESS_KEY }}
-          TF_VAR_paseto_refresh_key: ${{ secrets.PASETO_REFRESH_KEY }}
-          TF_VAR_admin_token: ${{ secrets.ADMIN_TOKEN }}
-          TF_VAR_project_id: ${{ secrets.SCW_PROJECT_ID }}
-          TF_VAR_organization_id: ${{ secrets.SCW_ORGANIZATION_ID }}
-          TF_VAR_scw_secret_key: ${{ secrets.SCW_SECRET_KEY }}
-          SCW_ACCESS_KEY: ${{ secrets.SCW_ACCESS_KEY }}
-          SCW_SECRET_KEY: ${{ secrets.SCW_SECRET_KEY }}
-          SCW_DEFAULT_ORGANIZATION_ID: ${{ secrets.SCW_ORGANIZATION_ID }}
-          AWS_ACCESS_KEY_ID: ${{ secrets.SCW_ACCESS_KEY }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.SCW_SECRET_KEY }}
-
-      - name: Install PostgreSQL client
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y postgresql-client
-
-      - name: Run database migrations
-        run: |
-          # Run each migration file in order
-          for migration in migrations/*.sql; do
-            echo "Running migration: $migration"
-            psql "$DATABASE_URL" -f "$migration" || echo "Migration $migration already applied or failed"
-          done
-        env:
-          DATABASE_URL: ${{ steps.db.outputs.database_url }}
+  # Database migrations now run on the instance via cloud-init (after docker compose up).
+  # The instance is on the private network and can reach the database directly.
 
   notify:
     name: Deployment Notification
-    needs: [terraform-apply, database-migrations]
+    needs: [terraform-apply]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -295,7 +240,7 @@ jobs:
         uses: rtCamp/action-slack-notify@v2
         env:
           SLACK_WEBHOOK: ${{ vars.SLACK_WEBHOOK_URL }}
-          SLACK_COLOR: ${{ needs.terraform-apply.result == 'success' && needs.database-migrations.result == 'success' && 'good' || 'danger' }}
-          SLACK_TITLE: "Ciel Deployment ${{ needs.terraform-apply.result == 'success' && needs.database-migrations.result == 'success' && 'Succeeded' || 'Failed' }}"
+          SLACK_COLOR: ${{ needs.terraform-apply.result == 'success' && 'good' || 'danger' }}
+          SLACK_TITLE: "Ciel Deployment ${{ needs.terraform-apply.result == 'success' && 'Succeeded' || 'Failed' }}"
           SLACK_MESSAGE: "Environment deployed: ${{ matrix.environment || 'dev' }}"
           SLACK_FOOTER: "Triggered by ${{ github.actor }}"

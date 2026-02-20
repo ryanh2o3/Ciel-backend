@@ -175,5 +175,14 @@ runcmd:
   # Enable Docker to start on boot
   - systemctl enable docker
 
-  # Dump diagnostics to serial console after containers settle
-  - sleep 60 && echo "=== CONTAINER STATUS ===" && docker compose -f /opt/ciel/docker-compose.yml ps -a && echo "=== API LOGS ===" && docker compose -f /opt/ciel/docker-compose.yml logs --no-color --tail 50 api
+  # Run database migrations from the app image
+  - |
+    docker create --name tmp-migrate ${container_image}:${image_tag}
+    docker cp tmp-migrate:/app/migrations /opt/ciel/migrations
+    docker rm tmp-migrate
+    DB_URL=$(grep ^DATABASE_URL /opt/ciel/.env | cut -d= -f2-)
+    docker run --rm --network=host \
+      -v /opt/ciel/migrations:/migrations:ro \
+      postgres:16-alpine \
+      sh -c 'for f in $(ls /migrations/*.sql | sort); do echo "Running $f"; psql "'"$DB_URL"'" -f "$f" 2>&1 || true; done'
+    echo "=== MIGRATIONS COMPLETE ==="
