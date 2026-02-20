@@ -302,6 +302,13 @@ variable "admin_token" {
 }
 
 
+variable "migration_database_url" {
+  description = "Database URL with admin credentials for running migrations"
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
 variable "http_addr" {
   description = "HTTP listen address"
   type        = string

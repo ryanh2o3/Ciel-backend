@@ -53,6 +53,10 @@ write_files:
       ADMIN_TOKEN=${admin_token}
       RUST_LOG=${rust_log}
 
+  - path: /opt/ciel/migration_db_url.txt
+    permissions: '0600'
+    content: ${migration_database_url}
+
   - path: /opt/ciel/redis_password.txt
     permissions: '0600'
     content: ${redis_password}
@@ -175,14 +179,16 @@ runcmd:
   # Enable Docker to start on boot
   - systemctl enable docker
 
-  # Run database migrations from the app image
+  # Run database migrations from the app image (using admin credentials)
   - |
     docker create --name tmp-migrate ${container_image}:${image_tag}
     docker cp tmp-migrate:/app/migrations /opt/ciel/migrations
     docker rm tmp-migrate
-    DB_URL=$(grep ^DATABASE_URL /opt/ciel/.env | cut -d= -f2-)
+    MIGRATION_URL=$(cat /opt/ciel/migration_db_url.txt)
     docker run --rm --network=host \
       -v /opt/ciel/migrations:/migrations:ro \
+      -e "DATABASE_URL=$MIGRATION_URL" \
       postgres:16-alpine \
-      sh -c 'for f in $(ls /migrations/*.sql | sort); do echo "Running $f"; psql "'"$DB_URL"'" -f "$f" 2>&1 || true; done'
+      sh -c 'for f in $(ls /migrations/*.sql | sort); do echo "Running $f"; psql "$DATABASE_URL" -f "$f" 2>&1 || true; done'
+    rm -f /opt/ciel/migration_db_url.txt
     echo "=== MIGRATIONS COMPLETE ==="

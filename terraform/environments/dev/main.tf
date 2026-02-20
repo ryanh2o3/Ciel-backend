@@ -196,11 +196,12 @@ module "compute" {
   worker_security_group_id = module.networking.worker_security_group_id
 
   # Application configuration from other modules
-  db_host            = module.database.private_endpoint
-  db_port            = module.database.endpoint_port
-  db_name            = module.database.database_name
-  db_user            = module.database.database_user
-  db_password        = var.db_user_password
+  db_host                = module.database.private_endpoint
+  db_port                = module.database.endpoint_port
+  db_name                = module.database.database_name
+  db_user                = module.database.database_user
+  db_password            = var.db_user_password
+  migration_database_url = module.database.migration_database_url
   redis_password     = var.redis_password
   s3_endpoint        = module.storage.s3_endpoint
   s3_region          = var.region

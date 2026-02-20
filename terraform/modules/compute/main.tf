@@ -73,31 +73,32 @@ locals {
 # Combined cloud-init: API + Redis on one instance
 locals {
   cloud_init_combined = var.enable_combined_mode ? templatefile("${path.module}/cloud-init-combined.yaml", {
-    container_image  = var.container_image
-    image_tag        = var.container_image_tag
-    scw_access_key   = scaleway_iam_api_key.runtime.access_key
-    scw_secret_key   = scaleway_iam_api_key.runtime.secret_key
-    scw_region       = var.region
-    http_addr        = var.http_addr
-    database_url     = local.database_url
-    redis_url        = local.redis_url_combined
-    redis_password   = var.redis_password
+    container_image    = var.container_image
+    image_tag          = var.container_image_tag
+    scw_access_key     = scaleway_iam_api_key.runtime.access_key
+    scw_secret_key     = scaleway_iam_api_key.runtime.secret_key
+    scw_region         = var.region
+    http_addr          = var.http_addr
+    database_url       = local.database_url
+    migration_database_url = var.migration_database_url
+    redis_url          = local.redis_url_combined
+    redis_password     = var.redis_password
     redis_maxmemory_mb = var.embedded_redis_maxmemory_mb
-    s3_endpoint      = var.s3_endpoint
-    s3_region        = var.s3_region
-    s3_bucket        = var.s3_bucket
+    s3_endpoint        = var.s3_endpoint
+    s3_region          = var.s3_region
+    s3_bucket          = var.s3_bucket
     s3_public_endpoint = var.s3_public_endpoint
-    s3_access_key    = var.s3_access_key
-    s3_secret_key    = var.s3_secret_key
-    queue_endpoint   = var.queue_endpoint
-    queue_region     = var.queue_region
-    queue_name       = var.queue_name
-    sqs_access_key   = var.sqs_access_key
-    sqs_secret_key   = var.sqs_secret_key
+    s3_access_key      = var.s3_access_key
+    s3_secret_key      = var.s3_secret_key
+    queue_endpoint     = var.queue_endpoint
+    queue_region       = var.queue_region
+    queue_name         = var.queue_name
+    sqs_access_key     = var.sqs_access_key
+    sqs_secret_key     = var.sqs_secret_key
     paseto_access_key  = var.paseto_access_key
     paseto_refresh_key = var.paseto_refresh_key
-    admin_token      = var.admin_token
-    rust_log         = var.rust_log
+    admin_token        = var.admin_token
+    rust_log           = var.rust_log
   }) : ""
 }
 

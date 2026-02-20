@@ -39,8 +39,14 @@ output "database_user" {
 }
 
 output "database_url" {
-  description = "Full database connection URL"
+  description = "Full database connection URL (app user — readwrite)"
   value       = "postgres://${scaleway_rdb_user.app.name}:${var.db_user_password}@${scaleway_rdb_instance.main.private_network[0].ip}:${scaleway_rdb_instance.main.private_network[0].port}/${scaleway_rdb_database.main.name}?sslmode=require"
+  sensitive   = true
+}
+
+output "migration_database_url" {
+  description = "Database connection URL for migrations (admin user — full DDL)"
+  value       = "postgres://${scaleway_rdb_user.migration.name}:${urlencode(var.db_admin_password)}@${scaleway_rdb_instance.main.private_network[0].ip}:${scaleway_rdb_instance.main.private_network[0].port}/${scaleway_rdb_database.main.name}?sslmode=require"
   sensitive   = true
 }
 

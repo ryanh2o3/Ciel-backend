@@ -44,12 +44,20 @@ resource "scaleway_rdb_database" "main" {
   }
 }
 
-# Application User
+# Application User (readwrite — no DDL)
 resource "scaleway_rdb_user" "app" {
   instance_id = scaleway_rdb_instance.main.id
   name        = var.db_user
   password    = var.db_user_password
   is_admin    = false
+}
+
+# Migration User (admin — runs DDL migrations at deploy time)
+resource "scaleway_rdb_user" "migration" {
+  instance_id = scaleway_rdb_instance.main.id
+  name        = "${var.db_user}_migrate"
+  password    = var.db_admin_password
+  is_admin    = true
 }
 
 # Privileges for application user
