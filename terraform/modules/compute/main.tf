@@ -81,6 +81,7 @@ locals {
     http_addr          = var.http_addr
     database_url       = local.database_url
     migration_database_url = var.migration_database_url
+    db_user            = var.db_user
     redis_url          = local.redis_url_combined
     redis_password     = var.redis_password
     redis_maxmemory_mb = var.embedded_redis_maxmemory_mb

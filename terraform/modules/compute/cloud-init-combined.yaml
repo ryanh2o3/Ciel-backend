@@ -190,6 +190,16 @@ runcmd:
       -v /opt/ciel/migrations:/migrations:ro \
       -e "DATABASE_URL=$MIGRATION_URL" \
       postgres:16-alpine \
-      sh -c 'for f in $(ls /migrations/*.sql | sort); do echo "Running $f"; psql "$DATABASE_URL" -f "$f" 2>&1 || true; done'
+      sh -c '
+        for f in $(ls /migrations/*.sql | sort); do
+          echo "Running $f"
+          psql "$DATABASE_URL" -f "$f" 2>&1 || true
+        done
+        echo "Granting app user permissions..."
+        psql "$DATABASE_URL" -c "GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO ${db_user};" 2>&1
+        psql "$DATABASE_URL" -c "GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO ${db_user};" 2>&1
+        psql "$DATABASE_URL" -c "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO ${db_user};" 2>&1
+        psql "$DATABASE_URL" -c "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO ${db_user};" 2>&1
+      '
     rm -f /opt/ciel/migration_db_url.txt
     echo "=== MIGRATIONS COMPLETE ==="
