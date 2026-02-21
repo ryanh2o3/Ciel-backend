@@ -98,25 +98,17 @@ resource "scaleway_object_bucket_policy" "media" {
     Version = "2023-04-17"
     Statement = [
       {
-        Sid       = "AllowProjectManagement"
-        Effect    = "Allow"
-        Principal = { SCW = "project_id:${var.project_id}" }
-        Action    = ["s3:*"]
-        Resource  = [
-          scaleway_object_bucket.media.name,
-          "${scaleway_object_bucket.media.name}/*"
-        ]
-      },
-      {
         Sid       = "AllowAppAccess"
         Effect    = "Allow"
         Principal = { SCW = "application_id:${scaleway_iam_application.s3_access.id}" }
         Action    = [
           "s3:PutObject",
           "s3:GetObject",
-          "s3:DeleteObject"
+          "s3:DeleteObject",
+          "s3:ListBucket"
         ]
         Resource  = [
+          scaleway_object_bucket.media.name,
           "${scaleway_object_bucket.media.name}/*"
         ]
       },
