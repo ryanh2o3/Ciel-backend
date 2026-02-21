@@ -108,6 +108,19 @@ resource "scaleway_object_bucket_policy" "media" {
         ]
       },
       {
+        Sid       = "AllowAppAccess"
+        Effect    = "Allow"
+        Principal = { SCW = "application_id:${scaleway_iam_application.s3_access.id}" }
+        Action    = [
+          "s3:PutObject",
+          "s3:GetObject",
+          "s3:DeleteObject"
+        ]
+        Resource  = [
+          "${scaleway_object_bucket.media.name}/*"
+        ]
+      },
+      {
         Sid       = "AllowPublicRead"
         Effect    = "Allow"
         Principal = "*"
