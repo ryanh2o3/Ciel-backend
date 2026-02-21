@@ -122,16 +122,9 @@ impl RateLimiter {
                 current_window(window_seconds)
             );
 
-            // Get current count
-            let count: u32 = conn.get(&key).await.unwrap_or(0);
-
-            // Increment
             let _: () = conn.incr(&key, 1).await?;
-
-            // Set expiration on first increment
-            if count == 0 {
-                let _: () = conn.expire(&key, window_seconds as i64).await?;
-            }
+            // Always set TTL to ensure keys expire even after Redis restarts
+            let _: () = conn.expire(&key, window_seconds as i64).await?;
         }
 
         Ok(())
@@ -204,12 +197,8 @@ impl RateLimiter {
 
         let mut conn = self.cache.client().get_multiplexed_async_connection().await?;
 
-        let count: u32 = conn.get(&key).await.unwrap_or(0);
         let _: () = conn.incr(&key, 1).await?;
-
-        if count == 0 {
-            let _: () = conn.expire(&key, window_seconds as i64).await?;
-        }
+        let _: () = conn.expire(&key, window_seconds as i64).await?;
 
         Ok(())
     }

@@ -90,35 +90,40 @@ resource "scaleway_iam_api_key" "s3_access" {
 }
 
 # Bucket policy for public read access to processed images (optional)
-resource "scaleway_object_bucket_policy" "media" {
-  bucket = scaleway_object_bucket.media.name
-  region = var.region
-
-  policy = jsonencode({
-    Version = "2023-04-17"
-    Statement = [
-      {
-        Sid       = "AllowAppAccess"
-        Effect    = "Allow"
-        Principal = { SCW = "application_id:${scaleway_iam_application.s3_access.id}" }
-        Action    = [
-          "s3:PutObject",
-          "s3:GetObject",
-          "s3:DeleteObject",
-          "s3:ListBucket"
-        ]
-        Resource  = [
-          scaleway_object_bucket.media.name,
-          "${scaleway_object_bucket.media.name}/*"
-        ]
-      },
-      {
-        Sid       = "AllowPublicRead"
-        Effect    = "Allow"
-        Principal = "*"
-        Action    = ["s3:GetObject"]
-        Resource  = ["${scaleway_object_bucket.media.name}/processed/*"]
-      }
-    ]
-  })
-}
+# NOTE: Temporarily commented out to debug upload 403 issue.
+# Scaleway bucket policies can act as a restrictive boundary — if the policy
+# doesn't match the presigned URL signer, uploads get AccessDenied even when
+# IAM permissions are correct. Uncomment once uploads are confirmed working.
+#
+# resource "scaleway_object_bucket_policy" "media" {
+#   bucket = scaleway_object_bucket.media.name
+#   region = var.region
+#
+#   policy = jsonencode({
+#     Version = "2023-04-17"
+#     Statement = [
+#       {
+#         Sid       = "AllowAppAccess"
+#         Effect    = "Allow"
+#         Principal = { SCW = "application_id:${scaleway_iam_application.s3_access.id}" }
+#         Action    = [
+#           "s3:PutObject",
+#           "s3:GetObject",
+#           "s3:DeleteObject",
+#           "s3:ListBucket"
+#         ]
+#         Resource  = [
+#           scaleway_object_bucket.media.name,
+#           "${scaleway_object_bucket.media.name}/*"
+#         ]
+#       },
+#       {
+#         Sid       = "AllowPublicRead"
+#         Effect    = "Allow"
+#         Principal = "*"
+#         Action    = ["s3:GetObject"]
+#         Resource  = ["${scaleway_object_bucket.media.name}/processed/*"]
+#       }
+#     ]
+#   })
+# }
