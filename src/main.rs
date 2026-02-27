@@ -114,6 +114,66 @@ async fn main() -> anyhow::Result<()> {
                 _ = shutdown_signal() => {}
             }
         }
+        "combined" => {
+            tracing::info!("starting combined mode (api + worker)");
+
+            // Spawn background cleanup task
+            let cleanup_db = state.db.clone();
+            tokio::spawn(async move {
+                let mut interval = tokio::time::interval(std::time::Duration::from_secs(3600));
+                loop {
+                    interval.tick().await;
+                    match sqlx::query(
+                        "DELETE FROM stories WHERE expires_at < now() - interval '48 hours'",
+                    )
+                    .execute(cleanup_db.pool())
+                    .await
+                    {
+                        Ok(result) => {
+                            if result.rows_affected() > 0 {
+                                tracing::info!(
+                                    count = result.rows_affected(),
+                                    "cleaned up expired stories"
+                                );
+                            }
+                        }
+                        Err(err) => {
+                            tracing::warn!(error = ?err, "failed to clean up expired stories");
+                        }
+                    }
+                    match sqlx::query("SELECT cleanup_expired_invites()")
+                        .execute(cleanup_db.pool())
+                        .await
+                    {
+                        Ok(_) => {}
+                        Err(err) => {
+                            tracing::warn!(error = ?err, "failed to clean up expired invites");
+                        }
+                    }
+                }
+            });
+
+            // Spawn media processing worker in the background
+            let worker_db = state.db.clone();
+            let worker_storage = state.storage.clone();
+            let worker_queue = state.queue.clone();
+            tokio::spawn(async move {
+                if let Err(err) =
+                    ciel::jobs::media_processor::run(worker_db, worker_storage, worker_queue).await
+                {
+                    tracing::error!(error = ?err, "media worker exited with error");
+                }
+            });
+
+            // Run the API server
+            let app: Router = ciel::http::router(state).layer(TraceLayer::new_for_http());
+            let listener = tokio::net::TcpListener::bind(&config.http_addr).await?;
+            tracing::info!("listening on {}", config.http_addr);
+            let app = app.into_make_service_with_connect_info::<SocketAddr>();
+            axum::serve(listener, app)
+                .with_graceful_shutdown(shutdown_signal())
+                .await?;
+        }
         other => return Err(anyhow!("unknown APP_MODE: {}", other)),
     }
 

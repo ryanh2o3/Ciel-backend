@@ -33,7 +33,7 @@ write_files:
   - path: /opt/ciel/.env
     permissions: '0600'
     content: |
-      APP_MODE=api
+      APP_MODE=combined
       HTTP_ADDR=${http_addr}
       DATABASE_URL=${database_url}
       REDIS_URL=${redis_url}
