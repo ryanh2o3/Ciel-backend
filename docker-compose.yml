@@ -77,6 +77,7 @@ services:
       S3_REGION: us-east-1
       S3_BUCKET: ciel-media
       S3_PUBLIC_ENDPOINT: ${S3_PUBLIC_ENDPOINT:-localhost:4566}
+      S3_FORCE_PATH_STYLE: "true"
       QUEUE_ENDPOINT: http://localstack:4566
       QUEUE_REGION: us-east-1
       QUEUE_NAME: ciel-media-jobs
@@ -114,6 +115,7 @@ services:
       S3_REGION: us-east-1
       S3_BUCKET: ciel-media
       S3_PUBLIC_ENDPOINT: ${S3_PUBLIC_ENDPOINT:-localhost:4566}
+      S3_FORCE_PATH_STYLE: "true"
       QUEUE_ENDPOINT: http://localstack:4566
       QUEUE_REGION: us-east-1
       QUEUE_NAME: ciel-media-jobs

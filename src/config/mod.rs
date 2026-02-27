@@ -33,6 +33,7 @@ pub struct AppConfig {
     pub access_ttl_minutes: u64,
     pub refresh_ttl_days: u64,
     pub ip_signup_rate_limit: u32,
+    pub s3_force_path_style: bool,
 }
 
 impl AppConfig {
@@ -74,6 +75,7 @@ impl AppConfig {
             access_ttl_minutes: env_or_parse("ACCESS_TTL_MINUTES", "15")?,
             refresh_ttl_days: env_or_parse("REFRESH_TTL_DAYS", "30")?,
             ip_signup_rate_limit: env_or_parse("IP_SIGNUP_RATE_LIMIT", "3")?,
+            s3_force_path_style: env_or("S3_FORCE_PATH_STYLE", "false") == "true",
         })
     }
 }
