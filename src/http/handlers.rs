@@ -1629,6 +1629,8 @@ pub struct RateLimitsResponse {
     pub follows_per_day: u32,
     pub likes_per_hour: u32,
     pub comments_per_hour: u32,
+    pub media_read_per_hour: u32,
+    pub media_upload_per_hour: u32,
     pub remaining: RemainingQuotas,
 }
 
@@ -1638,6 +1640,8 @@ pub struct RemainingQuotas {
     pub follows: u32,
     pub likes: u32,
     pub comments: u32,
+    pub media_read: u32,
+    pub media_upload: u32,
 }
 
 pub async fn get_rate_limits(
@@ -1672,6 +1676,14 @@ pub async fn get_rate_limits(
         .get_remaining(auth.user_id, "comment", trust_level)
         .await
         .unwrap_or(0);
+    let remaining_media_read = rate_limiter
+        .get_remaining(auth.user_id, "media_read", trust_level)
+        .await
+        .unwrap_or(0);
+    let remaining_media_upload = rate_limiter
+        .get_remaining(auth.user_id, "media_upload", trust_level)
+        .await
+        .unwrap_or(0);
 
     Ok(Json(RateLimitsResponse {
         trust_level: format!("{:?}", trust_level),
@@ -1681,11 +1693,15 @@ pub async fn get_rate_limits(
         follows_per_day: limits.follows_per_day,
         likes_per_hour: limits.likes_per_hour,
         comments_per_hour: limits.comments_per_hour,
+        media_read_per_hour: limits.media_read_per_hour,
+        media_upload_per_hour: limits.media_upload_per_hour,
         remaining: RemainingQuotas {
             posts: remaining_posts,
             follows: remaining_follows,
             likes: remaining_likes,
             comments: remaining_comments,
+            media_read: remaining_media_read,
+            media_upload: remaining_media_upload,
         },
     }))
 }

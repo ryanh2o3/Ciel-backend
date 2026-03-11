@@ -255,7 +255,11 @@ async fn get_rate_limits() {
     assert!(body["follows_per_hour"].is_number());
     assert!(body["likes_per_hour"].is_number());
     assert!(body["comments_per_hour"].is_number());
+    assert!(body["media_read_per_hour"].is_number());
+    assert!(body["media_upload_per_hour"].is_number());
     assert!(body["remaining"].is_object());
+    assert!(body["remaining"]["media_read"].is_number());
+    assert!(body["remaining"]["media_upload"].is_number());
 }
 
 #[tokio::test]

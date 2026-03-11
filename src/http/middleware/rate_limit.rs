@@ -33,7 +33,10 @@ pub async fn rate_limit_middleware(
         ("/feed/refresh", "POST") => Some("feed"),
         (p, _) if p.starts_with("/notifications") => Some("notifications"),
         (p, _) if p.starts_with("/search/") => Some("search"),
-        (p, _) if p.starts_with("/media") => Some("media"),
+        // Media: separate read vs write operations
+        (p, "GET") if p.starts_with("/media") => Some("media_read"),
+        (p, "POST") if p.starts_with("/media") => Some("media_upload"),
+        (p, "DELETE") if p.starts_with("/media") => Some("media_upload"),
         (p, _) if p.starts_with("/moderation/") => Some("moderation"),
         _ => None,
     };

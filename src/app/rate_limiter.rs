@@ -47,7 +47,8 @@ impl RateLimiter {
             "feed" => vec![(limits.feed_requests_per_hour, RateWindow::Hour)],
             "notifications" => vec![(limits.notifications_per_hour, RateWindow::Hour)],
             "search" => vec![(limits.search_requests_per_hour, RateWindow::Hour)],
-            "media" => vec![(limits.media_requests_per_hour, RateWindow::Hour)],
+            "media_read" => vec![(limits.media_read_per_hour, RateWindow::Hour)],
+            "media_upload" => vec![(limits.media_upload_per_hour, RateWindow::Hour)],
             "moderation" => vec![(limits.moderation_actions_per_hour, RateWindow::Hour)],
             _ => return Ok(RateLimitInfo { limited: false, limit: 0, remaining: 0 }),
         };
@@ -107,7 +108,9 @@ impl RateLimiter {
             "follow" => vec![RateWindow::Hour, RateWindow::Day],
             "unfollow" => vec![RateWindow::Day],
             "like" | "comment" | "login" => vec![RateWindow::Hour],
-            "feed" | "notifications" | "search" | "media" | "moderation" => vec![RateWindow::Hour],
+            "feed" | "notifications" | "search" | "media_read" | "media_upload" | "moderation" => {
+                vec![RateWindow::Hour]
+            }
             _ => return Ok(()), // Unknown action, skip
         };
 
@@ -144,6 +147,8 @@ impl RateLimiter {
             "follow" => (limits.follows_per_hour, RateWindow::Hour),
             "like" => (limits.likes_per_hour, RateWindow::Hour),
             "comment" => (limits.comments_per_hour, RateWindow::Hour),
+            "media_read" => (limits.media_read_per_hour, RateWindow::Hour),
+            "media_upload" => (limits.media_upload_per_hour, RateWindow::Hour),
             _ => return Ok(0),
         };
 

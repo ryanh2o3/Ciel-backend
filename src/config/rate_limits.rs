@@ -51,8 +51,11 @@ pub struct RateLimits {
     pub notifications_per_hour: u32,
     pub search_requests_per_hour: u32,
 
-    // Media & moderation
-    pub media_requests_per_hour: u32,
+    // Media (separated into read vs write operations)
+    pub media_read_per_hour: u32,
+    pub media_upload_per_hour: u32,
+
+    // Moderation
     pub moderation_actions_per_hour: u32,
 }
 
@@ -72,7 +75,8 @@ impl RateLimits {
                 feed_requests_per_hour: 120,
                 notifications_per_hour: 120,
                 search_requests_per_hour: 60,
-                media_requests_per_hour: 30,
+                media_read_per_hour: 500,
+                media_upload_per_hour: 10,
                 moderation_actions_per_hour: 20,
             },
             TrustLevel::Basic => RateLimits {
@@ -87,7 +91,8 @@ impl RateLimits {
                 feed_requests_per_hour: 300,
                 notifications_per_hour: 300,
                 search_requests_per_hour: 200,
-                media_requests_per_hour: 60,
+                media_read_per_hour: 1000,
+                media_upload_per_hour: 30,
                 moderation_actions_per_hour: 50,
             },
             TrustLevel::Trusted => RateLimits {
@@ -102,7 +107,8 @@ impl RateLimits {
                 feed_requests_per_hour: 1000,
                 notifications_per_hour: 1000,
                 search_requests_per_hour: 600,
-                media_requests_per_hour: 200,
+                media_read_per_hour: 3000,
+                media_upload_per_hour: 100,
                 moderation_actions_per_hour: 100,
             },
             TrustLevel::Verified => RateLimits {
@@ -117,7 +123,8 @@ impl RateLimits {
                 feed_requests_per_hour: 20000,
                 notifications_per_hour: 20000,
                 search_requests_per_hour: 12000,
-                media_requests_per_hour: 4000,
+                media_read_per_hour: 10000,
+                media_upload_per_hour: 500,
                 moderation_actions_per_hour: 2000,
             },
         }
@@ -138,7 +145,8 @@ impl RateLimits {
             ("feed", RateWindow::Hour) => Some(self.feed_requests_per_hour),
             ("notifications", RateWindow::Hour) => Some(self.notifications_per_hour),
             ("search", RateWindow::Hour) => Some(self.search_requests_per_hour),
-            ("media", RateWindow::Hour) => Some(self.media_requests_per_hour),
+            ("media_read", RateWindow::Hour) => Some(self.media_read_per_hour),
+            ("media_upload", RateWindow::Hour) => Some(self.media_upload_per_hour),
             ("moderation", RateWindow::Hour) => Some(self.moderation_actions_per_hour),
             _ => None,
         }
