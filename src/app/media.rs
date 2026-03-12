@@ -214,8 +214,9 @@ impl MediaService {
              WHERE m.id = $1 \
                AND (m.owner_id = $2 \
                     OR EXISTS ( \
-                        SELECT 1 FROM posts p \
-                        WHERE p.media_id = m.id \
+                        SELECT 1 FROM post_media pm \
+                        JOIN posts p ON p.id = pm.post_id \
+                        WHERE pm.media_id = m.id \
                           AND (p.visibility = 'public' \
                                OR p.owner_id = $2 \
                                OR (p.visibility = 'followers_only' AND EXISTS ( \
