@@ -19,28 +19,36 @@ impl PostService {
     pub async fn create_post(
         &self,
         owner_id: Uuid,
-        media_id: Uuid,
+        media_ids: Vec<Uuid>,
         caption: Option<String>,
     ) -> Result<Post> {
-        // C3: Verify media ownership before creating post
-        let media_owner: Option<Uuid> = sqlx::query_scalar(
-            "SELECT owner_id FROM media WHERE id = $1",
+        if media_ids.is_empty() {
+            return Err(anyhow::anyhow!("at least one media_id is required"));
+        }
+        if media_ids.len() > 10 {
+            return Err(anyhow::anyhow!("maximum 10 images per post"));
+        }
+
+        // Verify all media IDs belong to this user
+        let owned_count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM media WHERE id = ANY($1) AND owner_id = $2",
         )
-        .bind(media_id)
-        .fetch_optional(self.db.pool())
+        .bind(&media_ids)
+        .bind(owner_id)
+        .fetch_one(self.db.pool())
         .await?;
 
-        match media_owner {
-            Some(owner) if owner == owner_id => {}
-            Some(_) => return Err(anyhow::anyhow!("media not found or not owned by user")),
-            None => return Err(anyhow::anyhow!("media not found or not owned by user")),
+        if owned_count != media_ids.len() as i64 {
+            return Err(anyhow::anyhow!("media not found or not owned by user"));
         }
+
+        let mut tx = self.db.pool().begin().await?;
 
         let row = sqlx::query(
             "WITH inserted_post AS ( \
-                INSERT INTO posts (owner_id, media_id, caption, visibility) \
-                VALUES ($1, $2, $3, $4::post_visibility) \
-                RETURNING id, owner_id, media_id, caption, visibility::text AS visibility, created_at \
+                INSERT INTO posts (owner_id, caption, visibility) \
+                VALUES ($1, $2, $3::post_visibility) \
+                RETURNING id, owner_id, caption, visibility::text AS visibility, created_at \
              ) \
              SELECT p.*, u.handle AS owner_handle, u.display_name AS owner_display_name, \
                     u.avatar_key AS owner_avatar_key \
@@ -48,11 +56,25 @@ impl PostService {
              JOIN users u ON p.owner_id = u.id AND u.deleted_at IS NULL",
         )
         .bind(owner_id)
-        .bind(media_id)
-        .bind(caption)
+        .bind(&caption)
         .bind(PostVisibility::Public.as_db())
-        .fetch_one(self.db.pool())
+        .fetch_one(&mut *tx)
         .await?;
+
+        let post_id: Uuid = row.get("id");
+
+        for (position, media_id) in media_ids.iter().enumerate() {
+            sqlx::query(
+                "INSERT INTO post_media (post_id, media_id, position) VALUES ($1, $2, $3)",
+            )
+            .bind(post_id)
+            .bind(media_id)
+            .bind(position as i16)
+            .execute(&mut *tx)
+            .await?;
+        }
+
+        tx.commit().await?;
 
         let visibility: String = row.get("visibility");
         let visibility = PostVisibility::from_db(&visibility).ok_or_else(|| {
@@ -64,7 +86,7 @@ impl PostService {
             owner_id: row.get("owner_id"),
             owner_handle: Some(row.get("owner_handle")),
             owner_display_name: Some(row.get("owner_display_name")),
-            media_id: row.get("media_id"),
+            media_ids,
             caption: row.get("caption"),
             visibility,
             created_at: row.get("created_at"),
@@ -79,7 +101,8 @@ impl PostService {
                 sqlx::query(
                     "SELECT p.id, p.owner_id, u.handle AS owner_handle, u.display_name AS owner_display_name, \
                             u.avatar_key AS owner_avatar_key, \
-                            p.media_id, p.caption, p.visibility::text AS visibility, p.created_at \
+                            COALESCE(ARRAY(SELECT pm.media_id FROM post_media pm WHERE pm.post_id = p.id ORDER BY pm.position), ARRAY[]::uuid[]) AS media_ids, \
+                            p.caption, p.visibility::text AS visibility, p.created_at \
                      FROM posts p \
                      JOIN users u ON p.owner_id = u.id AND u.deleted_at IS NULL \
                      WHERE p.id = $1 \
@@ -103,7 +126,8 @@ impl PostService {
                 sqlx::query(
                     "SELECT p.id, p.owner_id, u.handle AS owner_handle, u.display_name AS owner_display_name, \
                             u.avatar_key AS owner_avatar_key, \
-                            p.media_id, p.caption, p.visibility::text AS visibility, p.created_at \
+                            COALESCE(ARRAY(SELECT pm.media_id FROM post_media pm WHERE pm.post_id = p.id ORDER BY pm.position), ARRAY[]::uuid[]) AS media_ids, \
+                            p.caption, p.visibility::text AS visibility, p.created_at \
                      FROM posts p \
                      JOIN users u ON p.owner_id = u.id AND u.deleted_at IS NULL \
                      WHERE p.id = $1 AND p.visibility = 'public'",
@@ -124,7 +148,7 @@ impl PostService {
                     owner_id: row.get("owner_id"),
                     owner_handle: Some(row.get("owner_handle")),
                     owner_display_name: Some(row.get("owner_display_name")),
-                    media_id: row.get("media_id"),
+                    media_ids: row.get("media_ids"),
                     caption: row.get("caption"),
                     visibility,
                     created_at: row.get("created_at"),
@@ -149,10 +173,11 @@ impl PostService {
                 UPDATE posts \
                 SET caption = $3 \
                 WHERE id = $1 AND owner_id = $2 \
-                RETURNING id, owner_id, media_id, caption, visibility::text AS visibility, created_at \
+                RETURNING id, owner_id, caption, visibility::text AS visibility, created_at \
              ) \
              SELECT p.*, u.handle AS owner_handle, u.display_name AS owner_display_name, \
-                    u.avatar_key AS owner_avatar_key \
+                    u.avatar_key AS owner_avatar_key, \
+                    COALESCE(ARRAY(SELECT pm.media_id FROM post_media pm WHERE pm.post_id = p.id ORDER BY pm.position), ARRAY[]::uuid[]) AS media_ids \
              FROM updated_post p \
              JOIN users u ON p.owner_id = u.id AND u.deleted_at IS NULL",
         )
@@ -172,7 +197,7 @@ impl PostService {
                     owner_id: row.get("owner_id"),
                     owner_handle: Some(row.get("owner_handle")),
                     owner_display_name: Some(row.get("owner_display_name")),
-                    media_id: row.get("media_id"),
+                    media_ids: row.get("media_ids"),
                     caption: row.get("caption"),
                     visibility,
                     created_at: row.get("created_at"),
@@ -209,7 +234,8 @@ impl PostService {
                     sqlx::query(
                         "SELECT p.id, p.owner_id, u.handle AS owner_handle, u.display_name AS owner_display_name, \
                                 u.avatar_key AS owner_avatar_key, \
-                                p.media_id, p.caption, p.visibility::text AS visibility, p.created_at \
+                                COALESCE(ARRAY(SELECT pm.media_id FROM post_media pm WHERE pm.post_id = p.id ORDER BY pm.position), ARRAY[]::uuid[]) AS media_ids, \
+                                p.caption, p.visibility::text AS visibility, p.created_at \
                          FROM posts p \
                          JOIN users u ON p.owner_id = u.id AND u.deleted_at IS NULL \
                          WHERE p.owner_id = $1 \
@@ -239,7 +265,8 @@ impl PostService {
                     sqlx::query(
                     "SELECT p.id, p.owner_id, u.handle AS owner_handle, u.display_name AS owner_display_name, \
                             u.avatar_key AS owner_avatar_key, \
-                            p.media_id, p.caption, p.visibility::text AS visibility, p.created_at \
+                            COALESCE(ARRAY(SELECT pm.media_id FROM post_media pm WHERE pm.post_id = p.id ORDER BY pm.position), ARRAY[]::uuid[]) AS media_ids, \
+                            p.caption, p.visibility::text AS visibility, p.created_at \
                      FROM posts p \
                      JOIN users u ON p.owner_id = u.id AND u.deleted_at IS NULL \
                      WHERE p.owner_id = $1 \
@@ -268,7 +295,8 @@ impl PostService {
                     sqlx::query(
                         "SELECT p.id, p.owner_id, u.handle AS owner_handle, u.display_name AS owner_display_name, \
                                 u.avatar_key AS owner_avatar_key, \
-                                p.media_id, p.caption, p.visibility::text AS visibility, p.created_at \
+                                COALESCE(ARRAY(SELECT pm.media_id FROM post_media pm WHERE pm.post_id = p.id ORDER BY pm.position), ARRAY[]::uuid[]) AS media_ids, \
+                                p.caption, p.visibility::text AS visibility, p.created_at \
                          FROM posts p \
                          JOIN users u ON p.owner_id = u.id AND u.deleted_at IS NULL \
                          WHERE p.owner_id = $1 \
@@ -288,7 +316,8 @@ impl PostService {
                     sqlx::query(
                         "SELECT p.id, p.owner_id, u.handle AS owner_handle, u.display_name AS owner_display_name, \
                                 u.avatar_key AS owner_avatar_key, \
-                                p.media_id, p.caption, p.visibility::text AS visibility, p.created_at \
+                                COALESCE(ARRAY(SELECT pm.media_id FROM post_media pm WHERE pm.post_id = p.id ORDER BY pm.position), ARRAY[]::uuid[]) AS media_ids, \
+                                p.caption, p.visibility::text AS visibility, p.created_at \
                          FROM posts p \
                          JOIN users u ON p.owner_id = u.id AND u.deleted_at IS NULL \
                          WHERE p.owner_id = $1 AND p.visibility = 'public' \
@@ -313,7 +342,7 @@ impl PostService {
                 owner_id: row.get("owner_id"),
                 owner_handle: Some(row.get("owner_handle")),
                 owner_display_name: Some(row.get("owner_display_name")),
-                media_id: row.get("media_id"),
+                media_ids: row.get("media_ids"),
                 caption: row.get("caption"),
                 visibility,
                 created_at: row.get("created_at"),

@@ -87,7 +87,8 @@ impl SearchService {
                 sqlx::query(
                     "SELECT p.id, p.owner_id, u.handle AS owner_handle, u.display_name AS owner_display_name, \
                             u.avatar_key AS owner_avatar_key, \
-                            p.media_id, p.caption, p.visibility::text AS visibility, p.created_at \
+                            COALESCE(ARRAY(SELECT pm.media_id FROM post_media pm WHERE pm.post_id = p.id ORDER BY pm.position), ARRAY[]::uuid[]) AS media_ids, \
+                            p.caption, p.visibility::text AS visibility, p.created_at \
                      FROM posts p \
                      JOIN users u ON p.owner_id = u.id \
                      WHERE p.visibility = 'public' \
@@ -107,7 +108,8 @@ impl SearchService {
                 sqlx::query(
                     "SELECT p.id, p.owner_id, u.handle AS owner_handle, u.display_name AS owner_display_name, \
                             u.avatar_key AS owner_avatar_key, \
-                            p.media_id, p.caption, p.visibility::text AS visibility, p.created_at \
+                            COALESCE(ARRAY(SELECT pm.media_id FROM post_media pm WHERE pm.post_id = p.id ORDER BY pm.position), ARRAY[]::uuid[]) AS media_ids, \
+                            p.caption, p.visibility::text AS visibility, p.created_at \
                      FROM posts p \
                      JOIN users u ON p.owner_id = u.id \
                      WHERE p.visibility = 'public' AND p.caption ILIKE $1 ESCAPE '\\' \
@@ -131,7 +133,7 @@ impl SearchService {
                 owner_id: row.get("owner_id"),
                 owner_handle: Some(row.get("owner_handle")),
                 owner_display_name: Some(row.get("owner_display_name")),
-                media_id: row.get("media_id"),
+                media_ids: row.get("media_ids"),
                 caption: row.get("caption"),
                 visibility,
                 created_at: row.get("created_at"),

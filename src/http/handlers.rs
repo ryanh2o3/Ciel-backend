@@ -773,7 +773,7 @@ pub async fn relationship_status(
 
 #[derive(Deserialize)]
 pub struct CreatePostRequest {
-    pub media_id: Uuid,
+    pub media_ids: Vec<Uuid>,
     pub caption: Option<String>,
 }
 
@@ -782,6 +782,12 @@ pub async fn create_post(
     State(state): State<AppState>,
     Json(payload): Json<CreatePostRequest>,
 ) -> Result<Json<crate::domain::post::Post>, AppError> {
+    if payload.media_ids.is_empty() {
+        return Err(AppError::bad_request("at least one media_id is required"));
+    }
+    if payload.media_ids.len() > 10 {
+        return Err(AppError::bad_request("maximum 10 images per post"));
+    }
     if let Some(ref caption) = payload.caption {
         if caption.len() > MAX_CAPTION_LEN {
             return Err(AppError::bad_request("caption must be at most 2200 characters"));
@@ -790,7 +796,7 @@ pub async fn create_post(
     
     let service = PostService::new(state.db.clone());
     let post = service
-        .create_post(auth.user_id, payload.media_id, payload.caption)
+        .create_post(auth.user_id, payload.media_ids, payload.caption)
         .await
         .map_err(|err| {
             if let Some(db_err) = err.downcast_ref::<sqlx::Error>() {
@@ -802,6 +808,12 @@ pub async fn create_post(
             }
             if err.to_string().contains("media not found") {
                 return AppError::bad_request("invalid media_id");
+            }
+            if err.to_string().contains("at least one media_id") {
+                return AppError::bad_request("at least one media_id is required");
+            }
+            if err.to_string().contains("maximum 10 images") {
+                return AppError::bad_request("maximum 10 images per post");
             }
             tracing::error!(error = ?err, owner_id = %auth.user_id, "failed to create post");
             AppError::internal("failed to create post")

@@ -8,7 +8,7 @@ pub struct Post {
     pub owner_id: Uuid,
     pub owner_handle: Option<String>,
     pub owner_display_name: Option<String>,
-    pub media_id: Uuid,
+    pub media_ids: Vec<Uuid>,
     pub caption: Option<String>,
     #[serde(with = "time::serde::rfc3339")]
     pub created_at: OffsetDateTime,
