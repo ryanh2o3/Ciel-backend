@@ -386,7 +386,7 @@ async fn create_post_no_auth() {
         .post_json(
             "/v1/posts",
             json!({
-                "media_id": Uuid::new_v4().to_string(),
+                "media_ids": [Uuid::new_v4().to_string()],
                 "caption": "test"
             }),
             None,

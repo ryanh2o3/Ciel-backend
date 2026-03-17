@@ -9,41 +9,19 @@ use time::format_description::well_known::Rfc3339;
 use time::OffsetDateTime;
 use uuid::Uuid;
 
-use crate::app::auth::AuthService;
+use crate::app::auth::{AuthError, AuthService};
 use crate::app::engagement::EngagementService;
 use crate::app::feed::FeedService;
 use crate::app::media::{MediaService, UploadIntent, UploadStatus};
 use crate::app::moderation::ModerationService;
 use crate::app::notifications::NotificationService;
-use crate::app::posts::PostService;
+use crate::app::posts::{PostError, PostService};
 use crate::app::search::SearchService;
 use crate::app::social::SocialService;
 use crate::app::users::UserService;
-use crate::http::{AdminToken, AppError, AuthUser};
+use crate::http::{internal_err, internal_err_user, AdminToken, AppError, AuthUser};
+use crate::http::validation;
 use crate::AppState;
-
-// Input validation constants
-const MAX_HANDLE_LEN: usize = 30;
-const MIN_HANDLE_LEN: usize = 3;
-const MAX_DISPLAY_NAME_LEN: usize = 50;
-const MAX_BIO_LEN: usize = 500;
-const MAX_CAPTION_LEN: usize = 2200;
-const MAX_PASSWORD_LEN: usize = 128;
-
-/// Validate handle format: alphanumeric and underscores only, 3-30 characters
-fn validate_handle(handle: &str) -> Result<(), AppError> {
-    let handle = handle.trim();
-    if handle.len() < MIN_HANDLE_LEN {
-        return Err(AppError::bad_request("handle must be at least 3 characters"));
-    }
-    if handle.len() > MAX_HANDLE_LEN {
-        return Err(AppError::bad_request("handle must be at most 30 characters"));
-    }
-    if !handle.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
-        return Err(AppError::bad_request("handle can only contain letters, numbers, and underscores"));
-    }
-    Ok(())
-}
 
 #[derive(Serialize)]
 pub(crate) struct HealthResponse {
@@ -88,6 +66,23 @@ fn encode_cursor(cursor: Option<(OffsetDateTime, Uuid)>) -> Option<String> {
     Some(format!("{}/{}", timestamp, id))
 }
 
+#[cfg(test)]
+mod cursor_tests {
+    use super::{encode_cursor, parse_cursor};
+    use time::OffsetDateTime;
+    use uuid::Uuid;
+
+    #[test]
+    fn cursor_roundtrip_rfc3339_uuid() {
+        let ts = OffsetDateTime::from_unix_timestamp(1_700_000_000).unwrap_or(OffsetDateTime::UNIX_EPOCH);
+        let id = Uuid::new_v4();
+        let encoded = encode_cursor(Some((ts, id))).expect("encode");
+        let decoded = parse_cursor(Some(encoded)).expect("parse").expect("some");
+        assert_eq!(decoded.1, id);
+        assert_eq!(decoded.0.unix_timestamp(), ts.unix_timestamp());
+    }
+}
+
 pub(crate) async fn health(State(state): State<AppState>) -> Json<HealthResponse> {
     let db = state.db.ping().await.is_ok();
     let redis = state.cache.ping().await.is_ok();
@@ -96,8 +91,8 @@ pub(crate) async fn health(State(state): State<AppState>) -> Json<HealthResponse
     Json(HealthResponse { status })
 }
 
-pub async fn metrics() -> Result<StatusCode, AppError> {
-    Err(AppError::not_implemented("metrics not yet available"))
+pub async fn metrics(State(state): State<AppState>) -> Result<String, AppError> {
+    Ok(state.metrics.render())
 }
 
 #[derive(Deserialize)]
@@ -120,12 +115,10 @@ pub async fn login(
     State(state): State<AppState>,
     Json(payload): Json<LoginRequest>,
 ) -> Result<Json<AuthTokenResponse>, AppError> {
-    const MAX_PASSWORD_LEN: usize = 128;
-
     if payload.email.trim().is_empty() || payload.password.trim().is_empty() {
         return Err(AppError::bad_request("email and password are required"));
     }
-    if payload.password.len() > MAX_PASSWORD_LEN {
+    if payload.password.len() > validation::MAX_PASSWORD_LEN {
         return Err(AppError::bad_request("password must be at most 128 characters"));
     }
 
@@ -139,10 +132,7 @@ pub async fn login(
     let tokens = service
         .login(&payload.email, &payload.password)
         .await
-        .map_err(|err| {
-            tracing::error!(error = ?err, "failed to login");
-            AppError::internal("failed to login")
-        })?;
+        .map_err(|err| internal_err("auth.login", anyhow::Error::new(err)))?;
 
     match tokens {
         Some(tokens) => Ok(Json(AuthTokenResponse {
@@ -178,10 +168,7 @@ pub async fn refresh_token(
     let tokens = service
         .refresh(&payload.refresh_token)
         .await
-        .map_err(|err| {
-            tracing::error!(error = ?err, "failed to refresh token");
-            AppError::internal("failed to refresh token")
-        })?;
+        .map_err(|err| internal_err("auth.refresh", anyhow::Error::new(err)))?;
 
     match tokens {
         Some(tokens) => Ok(Json(AuthTokenResponse {
@@ -217,10 +204,7 @@ pub async fn revoke_token(
     let revoked = service
         .revoke_refresh_token(&payload.refresh_token)
         .await
-        .map_err(|err| {
-            tracing::error!(error = ?err, "failed to revoke token");
-            AppError::internal("failed to revoke token")
-        })?;
+        .map_err(|err| internal_err("auth.revoke_refresh", anyhow::Error::new(err)))?;
 
     let _ = revoked;
     Ok(StatusCode::NO_CONTENT)
@@ -240,10 +224,7 @@ pub async fn get_current_user(
     let user = service
         .get_current_user(auth.user_id)
         .await
-        .map_err(|err| {
-            tracing::error!(error = ?err, user_id = %auth.user_id, "failed to fetch current user");
-            AppError::internal("failed to fetch current user")
-        })?;
+        .map_err(|err| internal_err("auth.me", anyhow::Error::new(err)))?;
 
     match user {
         Some(mut user) => {
@@ -266,10 +247,10 @@ pub async fn get_user(
     State(state): State<AppState>,
 ) -> Result<Json<crate::domain::user::PublicUser>, AppError> {
     let service = UserService::new(state.db.clone());
-    let result = service.get_public_user_with_counts(id).await.map_err(|err| {
-        tracing::error!(error = ?err, user_id = %id, "failed to fetch user");
-        AppError::internal("failed to fetch user")
-    })?;
+    let result = service
+        .get_public_user_with_counts(id)
+        .await
+        .map_err(|err| internal_err("users.get", err))?;
 
     match result {
         Some((mut user, followers_count, following_count, posts_count)) => {
@@ -307,7 +288,7 @@ pub async fn create_user(
     Json(payload): Json<CreateUserRequest>,
 ) -> Result<Json<crate::domain::user::User>, AppError> {
     // Validate handle format
-    validate_handle(&payload.handle)?;
+    validation::validate_handle(&payload.handle)?;
     
     if payload.email.trim().is_empty() {
         return Err(AppError::bad_request("email cannot be empty"));
@@ -323,18 +304,18 @@ pub async fn create_user(
     if payload.display_name.trim().is_empty() {
         return Err(AppError::bad_request("display_name cannot be empty"));
     }
-    if payload.display_name.len() > MAX_DISPLAY_NAME_LEN {
+    if payload.display_name.len() > validation::MAX_DISPLAY_NAME_LEN {
         return Err(AppError::bad_request("display_name must be at most 50 characters"));
     }
     if let Some(ref bio) = payload.bio {
-        if bio.len() > MAX_BIO_LEN {
+        if bio.len() > validation::MAX_BIO_LEN {
             return Err(AppError::bad_request("bio must be at most 500 characters"));
         }
     }
     if payload.password.trim().len() < 8 {
         return Err(AppError::bad_request("password must be at least 8 characters"));
     }
-    if payload.password.len() > MAX_PASSWORD_LEN {
+    if payload.password.len() > validation::MAX_PASSWORD_LEN {
         return Err(AppError::bad_request("password must be at most 128 characters"));
     }
     // H3: Password strength requirements
@@ -370,10 +351,10 @@ pub async fn create_user(
         )
         .await
         .map_err(|err| {
-            if let Some(sqlx_err) = err.downcast_ref::<sqlx::Error>() {
-                if let Some(db_err) = sqlx_err.as_database_error() {
-                    if let Some(code) = db_err.code() {
-                        if code == "23505" {
+            match err {
+                AuthError::Db(sqlx_err) => {
+                    if let Some(db_err) = sqlx_err.as_database_error() {
+                        if db_err.code().as_deref() == Some("23505") {
                             let constraint = db_err.constraint().unwrap_or_default();
                             if constraint.contains("users_handle_key") {
                                 return AppError::conflict("Handle already taken");
@@ -383,14 +364,11 @@ pub async fn create_user(
                             }
                         }
                     }
+                    internal_err("users.create", anyhow::Error::new(sqlx_err))
                 }
+                AuthError::Invite(message) => AppError::bad_request(message),
+                AuthError::Internal(err) => internal_err("users.create", err),
             }
-            let message = err.to_string();
-            if message.contains("invite code") || message.contains("Invite code") {
-                return AppError::bad_request(message);
-            }
-            tracing::error!(error = ?err, "failed to create user");
-            AppError::internal("failed to create user")
         })?;
 
     // Populate avatar URL if avatar_key exists
@@ -428,12 +406,12 @@ pub async fn update_profile(
         if display_name.trim().is_empty() {
             return Err(AppError::bad_request("display_name cannot be empty"));
         }
-        if display_name.len() > MAX_DISPLAY_NAME_LEN {
+        if display_name.len() > validation::MAX_DISPLAY_NAME_LEN {
             return Err(AppError::bad_request("display_name must be at most 50 characters"));
         }
     }
     if let Some(ref bio) = payload.bio {
-        if bio.len() > MAX_BIO_LEN {
+        if bio.len() > validation::MAX_BIO_LEN {
             return Err(AppError::bad_request("bio must be at most 500 characters"));
         }
     }
@@ -442,10 +420,7 @@ pub async fn update_profile(
     let user = service
         .update_profile(id, payload.display_name, payload.bio, payload.avatar_key)
         .await
-        .map_err(|err| {
-            tracing::error!(error = ?err, user_id = %id, "failed to update profile");
-            AppError::internal("failed to update profile")
-        })?;
+        .map_err(|err| internal_err_user("users.update_profile", id, err))?;
 
     match user {
         Some(mut user) => {
@@ -472,10 +447,7 @@ pub async fn delete_account(
     let deleted = service
         .delete_account(auth.user_id)
         .await
-        .map_err(|err| {
-            tracing::error!(error = ?err, user_id = %auth.user_id, "failed to delete account");
-            AppError::internal("failed to delete account")
-        })?;
+        .map_err(|err| internal_err_user("account.delete", auth.user_id, err))?;
 
     if deleted {
         tracing::info!(user_id = %auth.user_id, "account deleted");
@@ -502,10 +474,7 @@ pub async fn list_user_posts(
     let mut posts = service
         .list_by_user(id, viewer_id, cursor, limit + 1)
         .await
-        .map_err(|err| {
-            tracing::error!(error = ?err, user_id = %id, "failed to list user posts");
-            AppError::internal("failed to list user posts")
-        })?;
+        .map_err(|err| internal_err("users.list_posts", err))?;
 
     let next_cursor = if posts.len() > limit as usize {
         posts.pop().map(|last| (last.created_at, last.id))
@@ -789,7 +758,7 @@ pub async fn create_post(
         return Err(AppError::bad_request("maximum 10 images per post"));
     }
     if let Some(ref caption) = payload.caption {
-        if caption.len() > MAX_CAPTION_LEN {
+        if caption.len() > validation::MAX_CAPTION_LEN {
             return Err(AppError::bad_request("caption must be at most 2200 characters"));
         }
     }
@@ -799,24 +768,19 @@ pub async fn create_post(
         .create_post(auth.user_id, payload.media_ids, payload.caption)
         .await
         .map_err(|err| {
-            if let Some(db_err) = err.downcast_ref::<sqlx::Error>() {
-                if let sqlx::Error::Database(ref e) = db_err {
-                    if e.code().as_deref() == Some("23503") {
-                        return AppError::bad_request("invalid media_id");
+            match err {
+                PostError::Validation(msg) => AppError::bad_request(msg),
+                PostError::MediaNotOwned => AppError::bad_request("invalid media_id"),
+                PostError::Db(db_err) => {
+                    if let sqlx::Error::Database(ref e) = db_err {
+                        if e.code().as_deref() == Some("23503") {
+                            return AppError::bad_request("invalid media_id");
+                        }
                     }
+                    internal_err_user("posts.create", auth.user_id, db_err.into())
                 }
+                PostError::UnknownVisibility(_) => internal_err_user("posts.create", auth.user_id, err.into()),
             }
-            if err.to_string().contains("media not found") {
-                return AppError::bad_request("invalid media_id");
-            }
-            if err.to_string().contains("at least one media_id") {
-                return AppError::bad_request("at least one media_id is required");
-            }
-            if err.to_string().contains("maximum 10 images") {
-                return AppError::bad_request("maximum 10 images per post");
-            }
-            tracing::error!(error = ?err, owner_id = %auth.user_id, "failed to create post");
-            AppError::internal("failed to create post")
         })?;
 
     // H5: Invalidate poster's own home feed cache
@@ -878,7 +842,7 @@ pub async fn update_post_caption(
     Json(payload): Json<UpdateCaptionRequest>,
 ) -> Result<Json<crate::domain::post::Post>, AppError> {
     if let Some(ref caption) = payload.caption {
-        if caption.len() > MAX_CAPTION_LEN {
+        if caption.len() > validation::MAX_CAPTION_LEN {
             return Err(AppError::bad_request("caption must be at most 2200 characters"));
         }
     }

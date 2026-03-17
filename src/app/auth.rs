@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Result as AnyResult};
 use argon2::password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString};
 use argon2::Argon2;
 use pasetors::claims::{Claims, ClaimsValidationRules};
@@ -14,6 +14,16 @@ use crate::domain::user::User;
 use crate::app::invites::InviteService;
 use crate::app::trust::TrustService;
 use crate::infra::db::Db;
+
+#[derive(Debug, thiserror::Error)]
+pub enum AuthError {
+    #[error(transparent)]
+    Db(#[from] sqlx::Error),
+    #[error("{0}")]
+    Invite(String),
+    #[error(transparent)]
+    Internal(#[from] anyhow::Error),
+}
 
 #[derive(Debug, Clone)]
 pub struct AuthSession {
@@ -63,7 +73,7 @@ impl AuthService {
         avatar_key: Option<String>,
         password: String,
         invite_code: String,
-    ) -> Result<User> {
+    ) -> Result<User, AuthError> {
         let mut tx = self.db.pool().begin().await?;
 
         let password_hash = hash_password(&password)?;
@@ -100,14 +110,23 @@ impl AuthService {
         let invite_service = InviteService::new(self.db.clone());
         invite_service
             .consume_invite_with_tx(&invite_code, user.id, &mut tx)
-            .await?;
+            .await
+            .map_err(|err| {
+                // Normalize invite errors into a typed variant so handlers
+                // don't need to string-match.
+                AuthError::Invite(err.to_string())
+            })?;
 
         tx.commit().await?;
 
         Ok(user)
     }
 
-    pub async fn login(&self, identifier: &str, password: &str) -> Result<Option<TokenPair>> {
+    pub async fn login(
+        &self,
+        identifier: &str,
+        password: &str,
+    ) -> Result<Option<TokenPair>, AuthError> {
         let row = sqlx::query(
             "SELECT id, password_hash \
              FROM users WHERE (email = $1 OR handle = $1) AND deleted_at IS NULL",
@@ -135,7 +154,7 @@ impl AuthService {
         Ok(Some(tokens))
     }
 
-    pub async fn refresh(&self, refresh_token: &str) -> Result<Option<TokenPair>> {
+    pub async fn refresh(&self, refresh_token: &str) -> Result<Option<TokenPair>, AuthError> {
         let (user_id, refresh_id) = match self.verify_refresh_token(refresh_token) {
             Ok((user_id, refresh_id)) => (user_id, refresh_id),
             Err(_) => return Ok(None),
@@ -178,7 +197,7 @@ impl AuthService {
         Ok(Some(tokens.pair))
     }
 
-    pub async fn revoke_refresh_token(&self, refresh_token: &str) -> Result<bool> {
+    pub async fn revoke_refresh_token(&self, refresh_token: &str) -> Result<bool, AuthError> {
         let (user_id, refresh_id) = match self.verify_refresh_token(refresh_token) {
             Ok((user_id, refresh_id)) => (user_id, refresh_id),
             Err(_) => return Ok(false),
@@ -199,7 +218,10 @@ impl AuthService {
         Ok(result.rows_affected() > 0)
     }
 
-    pub async fn authenticate_access_token(&self, token: &str) -> Result<Option<AuthSession>> {
+    pub async fn authenticate_access_token(
+        &self,
+        token: &str,
+    ) -> Result<Option<AuthSession>, AuthError> {
         let claims = match self.decrypt_claims(token, self.access_key)? {
             Some(claims) => claims,
             None => return Ok(None),
@@ -211,7 +233,7 @@ impl AuthService {
         Ok(Some(AuthSession { user_id }))
     }
 
-    pub async fn get_current_user(&self, user_id: Uuid) -> Result<Option<User>> {
+    pub async fn get_current_user(&self, user_id: Uuid) -> Result<Option<User>, AuthError> {
         let row = sqlx::query(
             "SELECT id, handle, email, display_name, bio, avatar_key, created_at \
              FROM users WHERE id = $1 AND deleted_at IS NULL",
@@ -234,7 +256,7 @@ impl AuthService {
         Ok(user)
     }
 
-    fn decrypt_claims(&self, token: &str, key_bytes: [u8; 32]) -> Result<Option<Claims>> {
+    fn decrypt_claims(&self, token: &str, key_bytes: [u8; 32]) -> AnyResult<Option<Claims>> {
         let key = SymmetricKey::<V4>::from(&key_bytes)?;
         let mut rules = ClaimsValidationRules::new();
         rules.validate_issuer_with("ciel");
@@ -251,7 +273,7 @@ impl AuthService {
         Ok(trusted.payload_claims().cloned())
     }
 
-    fn build_access_claims(&self, user_id: Uuid) -> Result<(Claims, OffsetDateTime)> {
+    fn build_access_claims(&self, user_id: Uuid) -> AnyResult<(Claims, OffsetDateTime)> {
         let duration = std::time::Duration::from_secs(self.access_ttl_minutes * 60);
         let mut claims = Claims::new_expires_in(&duration)?;
         claims.issuer("ciel")?;
@@ -266,7 +288,7 @@ impl AuthService {
         &self,
         user_id: Uuid,
         refresh_id: Uuid,
-    ) -> Result<(Claims, OffsetDateTime)> {
+    ) -> AnyResult<(Claims, OffsetDateTime)> {
         let duration = std::time::Duration::from_secs(self.refresh_ttl_days * 24 * 60 * 60);
         let mut claims = Claims::new_expires_in(&duration)?;
         claims.issuer("ciel")?;
@@ -278,7 +300,7 @@ impl AuthService {
         Ok((claims, expires_at))
     }
 
-    pub async fn issue_token_pair(&self, user_id: Uuid) -> Result<TokenPair> {
+    pub async fn issue_token_pair(&self, user_id: Uuid) -> AnyResult<TokenPair> {
         let mut tx = self.db.pool().begin().await?;
         let tokens = self.issue_token_pair_with_tx(user_id, &mut tx).await?;
         tx.commit().await?;
@@ -289,7 +311,7 @@ impl AuthService {
         &self,
         user_id: Uuid,
         tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
-    ) -> Result<IssuedTokens> {
+    ) -> AnyResult<IssuedTokens> {
         let (access_claims, access_expires_at) = self.build_access_claims(user_id)?;
         let access_key = SymmetricKey::<V4>::from(&self.access_key)?;
         let access_token = local::encrypt(&access_key, &access_claims, None, None)?;
@@ -322,7 +344,7 @@ impl AuthService {
         })
     }
 
-    fn verify_refresh_token(&self, token: &str) -> Result<(Uuid, Uuid)> {
+    fn verify_refresh_token(&self, token: &str) -> AnyResult<(Uuid, Uuid)> {
         let claims = match self.decrypt_claims(token, self.refresh_key)? {
             Some(claims) => claims,
             None => return Err(anyhow!("invalid refresh token")),
@@ -341,7 +363,7 @@ struct IssuedTokens {
     pair: TokenPair,
 }
 
-fn hash_password(password: &str) -> Result<String> {
+fn hash_password(password: &str) -> AnyResult<String> {
     let salt = SaltString::generate(&mut argon2::password_hash::rand_core::OsRng);
     let argon2 = Argon2::default();
     let hash = argon2
@@ -350,7 +372,7 @@ fn hash_password(password: &str) -> Result<String> {
     Ok(hash.to_string())
 }
 
-fn verify_password(password: &str, hash: &str) -> Result<bool> {
+fn verify_password(password: &str, hash: &str) -> AnyResult<bool> {
     let parsed = PasswordHash::new(hash)
         .map_err(|err| anyhow!("failed to parse password hash: {}", err))?;
     Ok(Argon2::default()
@@ -365,7 +387,7 @@ fn hash_token(token: &str) -> String {
     hex::encode(digest)
 }
 
-fn claim_uuid(claims: &Claims, name: &str) -> Result<Uuid> {
+fn claim_uuid(claims: &Claims, name: &str) -> AnyResult<Uuid> {
     let value = claims
         .get_claim(name)
         .and_then(|value| value.as_str())

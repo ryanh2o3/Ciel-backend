@@ -487,15 +487,23 @@ impl TestApp {
     pub async fn create_post_for_user(&self, owner_id: Uuid) -> (Uuid, Uuid) {
         let media_id = self.create_media(owner_id).await;
         let pool = self.state.db.pool();
+
         let post_id: Uuid = sqlx::query_scalar(
-            "INSERT INTO posts (owner_id, media_id, caption, visibility) \
-             VALUES ($1, $2, 'test caption', 'public'::post_visibility) RETURNING id",
+            "INSERT INTO posts (owner_id, caption, visibility) \
+             VALUES ($1, 'test caption', 'public'::post_visibility) RETURNING id",
         )
         .bind(owner_id)
-        .bind(media_id)
         .fetch_one(pool)
         .await
         .expect("insert test post failed");
+
+        sqlx::query("INSERT INTO post_media (post_id, media_id, position) VALUES ($1, $2, 0)")
+            .bind(post_id)
+            .bind(media_id)
+            .execute(pool)
+            .await
+            .expect("insert test post_media failed");
+
         (post_id, media_id)
     }
 

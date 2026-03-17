@@ -22,7 +22,7 @@ async fn create_post_valid() {
     let resp = app
         .post_json(
             "/v1/posts",
-            json!({ "media_id": media_id.to_string(), "caption": "My first post!" }),
+            json!({ "media_ids": [media_id.to_string()], "caption": "My first post!" }),
             Some(&user.access_token),
         )
         .await;
@@ -31,7 +31,10 @@ async fn create_post_valid() {
     let body = resp.json();
     assert!(body["id"].is_string());
     assert_eq!(body["owner_id"].as_str().unwrap(), user.id.to_string());
-    assert_eq!(body["media_id"].as_str().unwrap(), media_id.to_string());
+    assert_eq!(
+        body["media_ids"].as_array().unwrap()[0].as_str().unwrap(),
+        media_id.to_string()
+    );
     assert_eq!(body["caption"].as_str().unwrap(), "My first post!");
 }
 
@@ -45,7 +48,7 @@ async fn create_post_caption_too_long() {
         .post_json(
             "/v1/posts",
             json!({
-                "media_id": media_id.to_string(),
+                "media_ids": [media_id.to_string()],
                 "caption": "a".repeat(2201)
             }),
             Some(&user.access_token),
@@ -68,7 +71,7 @@ async fn create_post_invalid_media() {
     let resp = app
         .post_json(
             "/v1/posts",
-            json!({ "media_id": fake_media_id.to_string(), "caption": "test" }),
+            json!({ "media_ids": [fake_media_id.to_string()], "caption": "test" }),
             Some(&user.access_token),
         )
         .await;
@@ -205,7 +208,7 @@ async fn create_post_no_caption() {
     let resp = app
         .post_json(
             "/v1/posts",
-            json!({ "media_id": media_id.to_string() }),
+            json!({ "media_ids": [media_id.to_string()] }),
             Some(&user.access_token),
         )
         .await;
@@ -214,4 +217,27 @@ async fn create_post_no_caption() {
     assert_eq!(resp.status, StatusCode::OK);
     let body = resp.json();
     assert!(body["caption"].is_null());
+}
+
+#[tokio::test]
+async fn create_post_multi_image_order_preserved() {
+    let app = app().await;
+    let user = app.create_user("post_multi_order").await;
+    let media_a = app.create_media(user.id).await;
+    let media_b = app.create_media(user.id).await;
+
+    let resp = app
+        .post_json(
+            "/v1/posts",
+            json!({ "media_ids": [media_a.to_string(), media_b.to_string()], "caption": "two pics" }),
+            Some(&user.access_token),
+        )
+        .await;
+
+    assert_eq!(resp.status, StatusCode::OK);
+    let body = resp.json();
+    let media_ids = body["media_ids"].as_array().unwrap();
+    assert_eq!(media_ids.len(), 2);
+    assert_eq!(media_ids[0].as_str().unwrap(), media_a.to_string());
+    assert_eq!(media_ids[1].as_str().unwrap(), media_b.to_string());
 }

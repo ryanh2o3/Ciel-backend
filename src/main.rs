@@ -36,12 +36,16 @@ async fn main() -> anyhow::Result<()> {
     let cache = RedisCache::connect(&config.redis_url).await?;
     let storage = ObjectStorage::new(&config).await?;
     let queue = QueueClient::new(&config).await?;
+    let metrics = metrics_exporter_prometheus::PrometheusBuilder::new()
+        .install_recorder()
+        .map_err(|err| anyhow!("failed to install metrics recorder: {err}"))?;
 
     let state = AppState {
         db,
         cache,
         storage,
         queue,
+        metrics,
         upload_url_ttl_seconds: config.upload_url_ttl_seconds,
         upload_max_bytes: config.upload_max_bytes,
         admin_token: config.admin_token.clone(),
@@ -55,46 +59,24 @@ async fn main() -> anyhow::Result<()> {
 
     match config.app_mode.as_str() {
         "api" => {
-            // H7: Spawn background cleanup task for expired data
-            let cleanup_db = state.db.clone();
-            tokio::spawn(async move {
-                let mut interval = tokio::time::interval(std::time::Duration::from_secs(3600));
-                loop {
-                    interval.tick().await;
-                    // Clean up expired stories (and cascaded views/reactions) older than 48h
-                    match sqlx::query(
-                        "DELETE FROM stories WHERE expires_at < now() - interval '48 hours'",
+            // Spawn background cleanup task for expired data
+            tokio::spawn(ciel::jobs::cleanup::run_cleanup_loop(state.db.clone()));
+
+            let app: Router = ciel::http::router(state).layer(
+                TraceLayer::new_for_http().make_span_with(|req: &axum::http::Request<_>| {
+                    let request_id = req
+                        .headers()
+                        .get("x-request-id")
+                        .and_then(|v| v.to_str().ok())
+                        .unwrap_or("-");
+                    tracing::info_span!(
+                        "http_request",
+                        method = %req.method(),
+                        uri = %req.uri(),
+                        request_id = %request_id,
                     )
-                    .execute(cleanup_db.pool())
-                    .await
-                    {
-                        Ok(result) => {
-                            if result.rows_affected() > 0 {
-                                tracing::info!(
-                                    count = result.rows_affected(),
-                                    "cleaned up expired stories"
-                                );
-                            }
-                        }
-                        Err(err) => {
-                            tracing::warn!(error = ?err, "failed to clean up expired stories");
-                        }
-                    }
-
-                    // Clean up expired invites
-                    match sqlx::query("SELECT cleanup_expired_invites()")
-                        .execute(cleanup_db.pool())
-                        .await
-                    {
-                        Ok(_) => {}
-                        Err(err) => {
-                            tracing::warn!(error = ?err, "failed to clean up expired invites");
-                        }
-                    }
-                }
-            });
-
-            let app: Router = ciel::http::router(state).layer(TraceLayer::new_for_http());
+                }),
+            );
             let listener = tokio::net::TcpListener::bind(&config.http_addr).await?;
             tracing::info!("listening on {}", config.http_addr);
 
@@ -118,40 +100,7 @@ async fn main() -> anyhow::Result<()> {
             tracing::info!("starting combined mode (api + worker)");
 
             // Spawn background cleanup task
-            let cleanup_db = state.db.clone();
-            tokio::spawn(async move {
-                let mut interval = tokio::time::interval(std::time::Duration::from_secs(3600));
-                loop {
-                    interval.tick().await;
-                    match sqlx::query(
-                        "DELETE FROM stories WHERE expires_at < now() - interval '48 hours'",
-                    )
-                    .execute(cleanup_db.pool())
-                    .await
-                    {
-                        Ok(result) => {
-                            if result.rows_affected() > 0 {
-                                tracing::info!(
-                                    count = result.rows_affected(),
-                                    "cleaned up expired stories"
-                                );
-                            }
-                        }
-                        Err(err) => {
-                            tracing::warn!(error = ?err, "failed to clean up expired stories");
-                        }
-                    }
-                    match sqlx::query("SELECT cleanup_expired_invites()")
-                        .execute(cleanup_db.pool())
-                        .await
-                    {
-                        Ok(_) => {}
-                        Err(err) => {
-                            tracing::warn!(error = ?err, "failed to clean up expired invites");
-                        }
-                    }
-                }
-            });
+            tokio::spawn(ciel::jobs::cleanup::run_cleanup_loop(state.db.clone()));
 
             // Spawn media processing worker in the background
             let worker_db = state.db.clone();
@@ -166,7 +115,21 @@ async fn main() -> anyhow::Result<()> {
             });
 
             // Run the API server
-            let app: Router = ciel::http::router(state).layer(TraceLayer::new_for_http());
+            let app: Router = ciel::http::router(state).layer(
+                TraceLayer::new_for_http().make_span_with(|req: &axum::http::Request<_>| {
+                    let request_id = req
+                        .headers()
+                        .get("x-request-id")
+                        .and_then(|v| v.to_str().ok())
+                        .unwrap_or("-");
+                    tracing::info_span!(
+                        "http_request",
+                        method = %req.method(),
+                        uri = %req.uri(),
+                        request_id = %request_id,
+                    )
+                }),
+            );
             let listener = tokio::net::TcpListener::bind(&config.http_addr).await?;
             tracing::info!("listening on {}", config.http_addr);
             let app = app.into_make_service_with_connect_info::<SocketAddr>();

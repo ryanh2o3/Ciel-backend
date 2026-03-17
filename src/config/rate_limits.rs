@@ -174,9 +174,11 @@ impl RateWindow {
 /// Calculate current window timestamp for rate limiting
 pub fn current_window(window_seconds: u64) -> u64 {
     use std::time::{SystemTime, UNIX_EPOCH};
+    // Avoid panicking if system clock is misconfigured (should be extremely rare,
+    // but reliability work treats panics as defects).
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .unwrap()
+        .unwrap_or_default()
         .as_secs();
     now / window_seconds
 }

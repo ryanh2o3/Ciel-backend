@@ -1,10 +1,21 @@
-use anyhow::Result;
 use sqlx::Row;
 use time::OffsetDateTime;
 use uuid::Uuid;
 
 use crate::domain::post::{Post, PostVisibility};
 use crate::infra::db::Db;
+
+#[derive(Debug, thiserror::Error)]
+pub enum PostError {
+    #[error("{0}")]
+    Validation(&'static str),
+    #[error("media not found or not owned by user")]
+    MediaNotOwned,
+    #[error("unknown post visibility: {0}")]
+    UnknownVisibility(String),
+    #[error(transparent)]
+    Db(#[from] sqlx::Error),
+}
 
 #[derive(Clone)]
 pub struct PostService {
@@ -21,12 +32,12 @@ impl PostService {
         owner_id: Uuid,
         media_ids: Vec<Uuid>,
         caption: Option<String>,
-    ) -> Result<Post> {
+    ) -> Result<Post, PostError> {
         if media_ids.is_empty() {
-            return Err(anyhow::anyhow!("at least one media_id is required"));
+            return Err(PostError::Validation("at least one media_id is required"));
         }
         if media_ids.len() > 10 {
-            return Err(anyhow::anyhow!("maximum 10 images per post"));
+            return Err(PostError::Validation("maximum 10 images per post"));
         }
 
         // Verify all media IDs belong to this user
@@ -39,7 +50,7 @@ impl PostService {
         .await?;
 
         if owned_count != media_ids.len() as i64 {
-            return Err(anyhow::anyhow!("media not found or not owned by user"));
+            return Err(PostError::MediaNotOwned);
         }
 
         let mut tx = self.db.pool().begin().await?;
@@ -77,9 +88,8 @@ impl PostService {
         tx.commit().await?;
 
         let visibility: String = row.get("visibility");
-        let visibility = PostVisibility::from_db(&visibility).ok_or_else(|| {
-            anyhow::anyhow!("unknown post visibility: {}", visibility)
-        })?;
+        let visibility = PostVisibility::from_db(&visibility)
+            .ok_or_else(|| PostError::UnknownVisibility(visibility))?;
 
         Ok(Post {
             id: row.get("id"),
@@ -95,7 +105,11 @@ impl PostService {
         })
     }
 
-    pub async fn get_post(&self, post_id: Uuid, viewer_id: Option<Uuid>) -> Result<Option<Post>> {
+    pub async fn get_post(
+        &self,
+        post_id: Uuid,
+        viewer_id: Option<Uuid>,
+    ) -> Result<Option<Post>, PostError> {
         let row = match viewer_id {
             Some(viewer_id) => {
                 sqlx::query(
@@ -142,7 +156,7 @@ impl PostService {
             Some(row) => {
                 let visibility: String = row.get("visibility");
                 let visibility = PostVisibility::from_db(&visibility)
-                    .ok_or_else(|| anyhow::anyhow!("unknown post visibility: {}", visibility))?;
+                    .ok_or_else(|| PostError::UnknownVisibility(visibility))?;
                 Some(Post {
                     id: row.get("id"),
                     owner_id: row.get("owner_id"),
@@ -167,7 +181,7 @@ impl PostService {
         post_id: Uuid,
         owner_id: Uuid,
         caption: Option<String>,
-    ) -> Result<Option<Post>> {
+    ) -> Result<Option<Post>, PostError> {
         let row = sqlx::query(
             "WITH updated_post AS ( \
                 UPDATE posts \
@@ -191,7 +205,7 @@ impl PostService {
             Some(row) => {
                 let visibility: String = row.get("visibility");
                 let visibility = PostVisibility::from_db(&visibility)
-                    .ok_or_else(|| anyhow::anyhow!("unknown post visibility: {}", visibility))?;
+                    .ok_or_else(|| PostError::UnknownVisibility(visibility))?;
                 Some(Post {
                     id: row.get("id"),
                     owner_id: row.get("owner_id"),
@@ -211,7 +225,7 @@ impl PostService {
         Ok(post)
     }
 
-    pub async fn delete_post(&self, post_id: Uuid, owner_id: Uuid) -> Result<bool> {
+    pub async fn delete_post(&self, post_id: Uuid, owner_id: Uuid) -> Result<bool, PostError> {
         let result = sqlx::query("DELETE FROM posts WHERE id = $1 AND owner_id = $2")
             .bind(post_id)
             .bind(owner_id)
@@ -227,7 +241,7 @@ impl PostService {
         viewer_id: Option<Uuid>,
         cursor: Option<(OffsetDateTime, Uuid)>,
         limit: i64,
-    ) -> Result<Vec<Post>> {
+    ) -> Result<Vec<Post>, PostError> {
         let rows = match viewer_id {
             Some(viewer_id) => match cursor {
                 Some((created_at, post_id)) => {
@@ -336,7 +350,7 @@ impl PostService {
         for row in rows {
             let visibility: String = row.get("visibility");
             let visibility = PostVisibility::from_db(&visibility)
-                .ok_or_else(|| anyhow::anyhow!("unknown post visibility: {}", visibility))?;
+                .ok_or_else(|| PostError::UnknownVisibility(visibility))?;
             posts.push(Post {
                 id: row.get("id"),
                 owner_id: row.get("owner_id"),

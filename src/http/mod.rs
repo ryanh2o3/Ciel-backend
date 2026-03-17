@@ -13,11 +13,15 @@ use crate::AppState;
 mod auth;
 mod error;
 mod handlers;
+mod logging;
 pub mod middleware;
+pub mod validation;
 mod routes;
 
 pub use auth::{AdminToken, AuthUser};
 pub use error::AppError;
+pub use logging::internal_err;
+pub use logging::internal_err_user;
 
 pub fn router(state: AppState) -> Router {
     // M8: Versioned API routes under /v1
@@ -147,6 +151,8 @@ pub fn router(state: AppState) -> Router {
         .nest("/v1", v1_routes)
         .with_state(state)
         // Global middleware layers (applied to all routes)
+        // Metrics (Prometheus)
+        .layer(axum_middleware::from_fn(middleware::metrics::metrics_middleware))
         // CORS — no web origins allowed (mobile-only API)
         .layer(
             CorsLayer::new()

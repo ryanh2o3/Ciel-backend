@@ -4,6 +4,10 @@ use axum::{
     middleware::Next,
 };
 
+const HSTS_VALUE: &str = "max-age=31536000; includeSubDomains";
+const CSP_VALUE: &str = "default-src 'none'; frame-ancestors 'none'";
+const CACHE_CONTROL_VALUE: &str = "no-store, no-cache, must-revalidate";
+
 /// Security headers middleware that adds essential security headers to all responses
 /// and enforces HTTPS in non-local environments
 pub async fn security_headers_middleware(
@@ -47,38 +51,38 @@ pub async fn security_headers_middleware(
     if !is_local {
         headers.insert(
             header::STRICT_TRANSPORT_SECURITY,
-            "max-age=31536000; includeSubDomains".parse().unwrap(),
+            header::HeaderValue::from_static(HSTS_VALUE),
         );
     }
 
     // X-Content-Type-Options: prevent MIME type sniffing
     headers.insert(
         header::X_CONTENT_TYPE_OPTIONS,
-        "nosniff".parse().unwrap(),
+        header::HeaderValue::from_static("nosniff"),
     );
 
     // X-Frame-Options: prevent clickjacking
     headers.insert(
         header::X_FRAME_OPTIONS,
-        "DENY".parse().unwrap(),
+        header::HeaderValue::from_static("DENY"),
     );
 
     // X-XSS-Protection: legacy XSS protection for older browsers
     headers.insert(
-        "x-xss-protection".parse::<HeaderName>().unwrap(),
-        "1; mode=block".parse().unwrap(),
+        HeaderName::from_static("x-xss-protection"),
+        header::HeaderValue::from_static("1; mode=block"),
     );
 
     // Content-Security-Policy: restrictive default for API responses
     headers.insert(
         header::CONTENT_SECURITY_POLICY,
-        "default-src 'none'; frame-ancestors 'none'".parse().unwrap(),
+        header::HeaderValue::from_static(CSP_VALUE),
     );
 
     // Referrer-Policy: don't leak referrer information
     headers.insert(
-        "referrer-policy".parse::<HeaderName>().unwrap(),
-        "no-referrer".parse().unwrap(),
+        HeaderName::from_static("referrer-policy"),
+        header::HeaderValue::from_static("no-referrer"),
     );
 
     // Cache-Control: prevent caching of API responses by default
@@ -86,7 +90,7 @@ pub async fn security_headers_middleware(
     if !headers.contains_key(header::CACHE_CONTROL) {
         headers.insert(
             header::CACHE_CONTROL,
-            "no-store, no-cache, must-revalidate".parse().unwrap(),
+            header::HeaderValue::from_static(CACHE_CONTROL_VALUE),
         );
     }
 

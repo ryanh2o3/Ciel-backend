@@ -6,6 +6,7 @@ pub mod infra;
 pub mod jobs;
 
 use crate::infra::{cache::RedisCache, db::Db, queue::QueueClient, storage::ObjectStorage};
+use metrics_exporter_prometheus::PrometheusHandle;
 
 #[derive(Clone)]
 pub struct AppState {
@@ -13,6 +14,7 @@ pub struct AppState {
     pub cache: RedisCache,
     pub storage: ObjectStorage,
     pub queue: QueueClient,
+    pub metrics: PrometheusHandle,
     pub upload_url_ttl_seconds: u64,
     pub upload_max_bytes: i64,
     pub admin_token: Option<String>,
