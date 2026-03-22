@@ -4,7 +4,6 @@ use axum::{
     Json,
 };
 use serde::{Deserialize, Serialize};
-use sqlx::Row;
 use time::format_description::well_known::Rfc3339;
 use time::OffsetDateTime;
 use uuid::Uuid;
@@ -43,6 +42,26 @@ fn map_invite_error(err: InviteError, context: &'static str) -> AppError {
         InviteError::Db(e) => {
             tracing::error!(error = ?e, context, "invite database error");
             AppError::internal(context)
+        }
+    }
+}
+
+fn map_post_error(context: &'static str, err: PostError) -> AppError {
+    match err {
+        PostError::Validation(msg) => AppError::bad_request(msg),
+        PostError::MediaNotOwned => AppError::bad_request("invalid media_id"),
+        PostError::UnknownVisibility(v) => {
+            tracing::error!(context, visibility = %v, "unknown post visibility from DB");
+            AppError::internal("failed to load posts")
+        }
+        PostError::Db(db_err) => {
+            if let sqlx::Error::Database(ref e) = db_err {
+                if e.code().as_deref() == Some("23503") {
+                    return AppError::bad_request("invalid media_id");
+                }
+            }
+            tracing::error!(context, error = ?db_err, "post service database error");
+            AppError::internal("failed to load posts")
         }
     }
 }
@@ -522,7 +541,7 @@ pub async fn list_user_posts(
     let mut posts = service
         .list_by_user(id, viewer_id, cursor, limit + 1)
         .await
-        .map_err(|err| internal_err("users.list_posts", err))?;
+        .map_err(|err| map_post_error("users.list_posts", err))?;
 
     let next_cursor = if posts.len() > limit as usize {
         posts.pop().map(|last| (last.created_at, last.id))
@@ -809,19 +828,19 @@ pub async fn create_post(
     let post = service
         .create_post(auth.user_id, payload.media_ids, payload.caption)
         .await
-        .map_err(|err| {
-            match err {
-                PostError::Validation(msg) => AppError::bad_request(msg),
-                PostError::MediaNotOwned => AppError::bad_request("invalid media_id"),
-                PostError::Db(db_err) => {
-                    if let sqlx::Error::Database(ref e) = db_err {
-                        if e.code().as_deref() == Some("23503") {
-                            return AppError::bad_request("invalid media_id");
-                        }
+        .map_err(|err| match err {
+            PostError::Validation(msg) => AppError::bad_request(msg),
+            PostError::MediaNotOwned => AppError::bad_request("invalid media_id"),
+            PostError::Db(db_err) => {
+                if let sqlx::Error::Database(ref e) = db_err {
+                    if e.code().as_deref() == Some("23503") {
+                        return AppError::bad_request("invalid media_id");
                     }
-                    internal_err_user("posts.create", auth.user_id, db_err.into())
                 }
-                PostError::UnknownVisibility(_) => internal_err_user("posts.create", auth.user_id, err.into()),
+                internal_err_user("posts.create", auth.user_id, db_err.into())
+            }
+            PostError::UnknownVisibility(_) => {
+                internal_err_user("posts.create", auth.user_id, err.into())
             }
         })?;
 
