@@ -12,16 +12,64 @@ use uuid::Uuid;
 use crate::app::auth::{AuthError, AuthService};
 use crate::app::engagement::EngagementService;
 use crate::app::feed::FeedService;
+use crate::app::invites::InviteError;
 use crate::app::media::{MediaService, UploadIntent, UploadStatus};
 use crate::app::moderation::ModerationService;
 use crate::app::notifications::NotificationService;
 use crate::app::posts::{PostError, PostService};
 use crate::app::search::SearchService;
-use crate::app::social::SocialService;
+use crate::app::social::{SocialError, SocialService};
+use crate::app::stories::StoryError;
 use crate::app::users::UserService;
 use crate::http::{internal_err, internal_err_user, AdminToken, AppError, AuthUser};
 use crate::http::validation;
+use crate::jobs::notifications::NotificationJob;
 use crate::AppState;
+
+fn map_invite_error(err: InviteError, context: &'static str) -> AppError {
+    match err {
+        InviteError::TrustScoreNotFound => {
+            tracing::error!(context, "user trust score not found");
+            AppError::internal(context)
+        }
+        InviteError::InviteLimitReached(max) => AppError::forbidden(format!(
+            "Maximum invite limit reached for your trust level ({})",
+            max
+        )),
+        InviteError::CodeGenerationFailed => {
+            tracing::error!(context, "failed to generate unique invite code");
+            AppError::internal(context)
+        }
+        InviteError::Db(e) => {
+            tracing::error!(error = ?e, context, "invite database error");
+            AppError::internal(context)
+        }
+    }
+}
+
+fn map_story_error(context: &'static str, err: StoryError) -> AppError {
+    match err {
+        StoryError::MediaNotFound => AppError::not_found("media not found"),
+        StoryError::MediaNotOwned => AppError::forbidden("media does not belong to you"),
+        StoryError::StoryNotFound => AppError::not_found("story not found"),
+        StoryError::UnknownVisibility(v) => {
+            tracing::error!(visibility = %v, context, "unknown story visibility from DB");
+            AppError::internal(context)
+        }
+        StoryError::Db(e) => {
+            if matches!(&e, sqlx::Error::RowNotFound) {
+                return AppError::not_found("story not found");
+            }
+            if let Some(db_err) = e.as_database_error() {
+                if db_err.code().as_deref() == Some("23503") {
+                    return AppError::not_found("story not found");
+                }
+            }
+            tracing::error!(error = ?e, context, "story service database error");
+            AppError::internal(context)
+        }
+    }
+}
 
 #[derive(Serialize)]
 pub(crate) struct HealthResponse {
@@ -507,32 +555,26 @@ pub async fn follow_user(
     }
 
     let service = SocialService::new(state.db.clone());
-    let followed = service.follow(auth.user_id, id).await.map_err(|err| {
-        if err.to_string().contains("user not found") {
-            return AppError::not_found("user not found");
+    let followed = service.follow(auth.user_id, id).await.map_err(|err| match err {
+        SocialError::UserNotFound => AppError::not_found("user not found"),
+        SocialError::FollowerLimitReached => {
+            AppError::forbidden("user has reached the follower limit")
         }
-        if err.to_string().contains("follower limit") {
-            return AppError::forbidden("user has reached the follower limit");
+        SocialError::Db(e) => {
+            tracing::error!(error = ?e, follower_id = %auth.user_id, followee_id = %id, "failed to follow user");
+            AppError::internal("failed to follow user")
         }
-        tracing::error!(error = ?err, follower_id = %auth.user_id, followee_id = %id, "failed to follow user");
-        AppError::internal("failed to follow user")
     })?;
 
-    // Fire-and-forget notification for new follows
     if followed {
-        let db = state.db.clone();
-        let actor_id = auth.user_id;
-        let followee_id = id;
-        tokio::spawn(async move {
-            let notif_svc = NotificationService::new(db);
-            let payload = serde_json::json!({});
-            if let Err(err) = notif_svc
-                .create_if_not_self(followee_id, actor_id, "user_followed", payload)
-                .await
-            {
-                tracing::warn!(error = ?err, "failed to create follow notification");
-            }
-        });
+        let job = NotificationJob::UserFollowed {
+            followee_id: id,
+            actor_id: auth.user_id,
+        };
+        if state.notification_tx.try_send(job).is_err() {
+            metrics::counter!("notifications_dropped_total").increment(1);
+            tracing::warn!("notification queue full; dropped user_followed");
+        }
     }
 
     Ok(Json(FollowResponse { followed }))
@@ -904,29 +946,15 @@ pub async fn like_post(
             AppError::internal("failed to like post")
         })?;
 
-    // Fire-and-forget notification for new likes
     if like.is_some() {
-        let db = state.db.clone();
-        let actor_id = auth.user_id;
-        let post_id = id;
-        tokio::spawn(async move {
-            let notif_svc = NotificationService::new(db.clone());
-            // Look up post owner
-            let owner_row = sqlx::query("SELECT user_id FROM posts WHERE id = $1")
-                .bind(post_id)
-                .fetch_optional(db.pool())
-                .await;
-            if let Ok(Some(row)) = owner_row {
-                let owner_id: Uuid = row.get("user_id");
-                let payload = serde_json::json!({ "post_id": post_id.to_string() });
-                if let Err(err) = notif_svc
-                    .create_if_not_self(owner_id, actor_id, "post_liked", payload)
-                    .await
-                {
-                    tracing::warn!(error = ?err, "failed to create like notification");
-                }
-            }
-        });
+        let job = NotificationJob::PostLiked {
+            post_id: id,
+            actor_id: auth.user_id,
+        };
+        if state.notification_tx.try_send(job).is_err() {
+            metrics::counter!("notifications_dropped_total").increment(1);
+            tracing::warn!("notification queue full; dropped post_liked");
+        }
     }
 
     Ok(Json(LikeResponse {
@@ -1022,32 +1050,17 @@ pub async fn comment_post(
             AppError::internal("failed to comment")
         })?;
 
-    // Fire-and-forget notification for new comments
     {
-        let db = state.db.clone();
-        let actor_id = auth.user_id;
-        let post_id = id;
         let preview: String = comment_body.chars().take(100).collect();
-        tokio::spawn(async move {
-            let notif_svc = NotificationService::new(db.clone());
-            let owner_row = sqlx::query("SELECT user_id FROM posts WHERE id = $1")
-                .bind(post_id)
-                .fetch_optional(db.pool())
-                .await;
-            if let Ok(Some(row)) = owner_row {
-                let owner_id: Uuid = row.get("user_id");
-                let payload = serde_json::json!({
-                    "post_id": post_id.to_string(),
-                    "comment_preview": preview,
-                });
-                if let Err(err) = notif_svc
-                    .create_if_not_self(owner_id, actor_id, "post_commented", payload)
-                    .await
-                {
-                    tracing::warn!(error = ?err, "failed to create comment notification");
-                }
-            }
-        });
+        let job = NotificationJob::PostCommented {
+            post_id: id,
+            actor_id: auth.user_id,
+            preview,
+        };
+        if state.notification_tx.try_send(job).is_err() {
+            metrics::counter!("notifications_dropped_total").increment(1);
+            tracing::warn!("notification queue full; dropped post_commented");
+        }
     }
 
     Ok(Json(comment))
@@ -1818,14 +1831,7 @@ pub async fn create_invite(
     let invite = service
         .create_invite(auth.user_id, payload.days_valid)
         .await
-        .map_err(|err| {
-            if err.to_string().contains("Maximum invite limit") {
-                AppError::forbidden(&err.to_string())
-            } else {
-                tracing::error!(error = ?err, "failed to create invite");
-                AppError::internal("failed to create invite")
-            }
-        })?;
+        .map_err(|e| map_invite_error(e, "failed to create invite"))?;
 
     Ok(Json(invite))
 }
@@ -1902,10 +1908,7 @@ pub async fn admin_create_invite(
     let invite = service
         .create_admin_invite(days)
         .await
-        .map_err(|err| {
-            tracing::error!(error = ?err, "failed to create admin invite");
-            AppError::internal("failed to create admin invite")
-        })?;
+        .map_err(|e| map_invite_error(e, "failed to create admin invite"))?;
 
     Ok(Json(invite))
 }
@@ -1931,16 +1934,7 @@ pub async fn create_story(
     let story = service
         .create_story(auth.user_id, payload.media_id, payload.caption, payload.visibility)
         .await
-        .map_err(|err| {
-            if err.to_string().contains("media not found") {
-                return AppError::not_found("media not found");
-            }
-            if err.to_string().contains("does not belong") {
-                return AppError::forbidden("media does not belong to you");
-            }
-            tracing::error!(error = ?err, user_id = %auth.user_id, "failed to create story");
-            AppError::internal("failed to create story")
-        })?;
+        .map_err(|e| map_story_error("failed to create story", e))?;
 
     let media_svc = crate::app::media::MediaService::new(
         state.db.clone(), state.cache.clone(), state.storage.clone(), state.queue.clone(), state.s3_public_endpoint.clone(),
@@ -1968,10 +1962,7 @@ pub async fn get_user_stories(
     let mut stories = service
         .get_user_stories(id, auth.user_id, cursor, limit + 1)
         .await
-        .map_err(|err| {
-            tracing::error!(error = ?err, user_id = %id, "failed to get user stories");
-            AppError::internal("failed to get user stories")
-        })?;
+        .map_err(|e| map_story_error("failed to get user stories", e))?;
 
     let next_cursor = if stories.len() > limit as usize {
         stories.pop().map(|last| (last.created_at, last.id))
@@ -2000,10 +1991,7 @@ pub async fn get_story(
     let story = service
         .get_story(id, auth.user_id)
         .await
-        .map_err(|err| {
-            tracing::error!(error = ?err, story_id = %id, "failed to get story");
-            AppError::internal("failed to get story")
-        })?;
+        .map_err(|e| map_story_error("failed to get story", e))?;
 
     match story {
         Some(mut story) => {
@@ -2027,10 +2015,7 @@ pub async fn delete_story(
     let deleted = service
         .delete_story(id, auth.user_id)
         .await
-        .map_err(|err| {
-            tracing::error!(error = ?err, story_id = %id, "failed to delete story");
-            AppError::internal("failed to delete story")
-        })?;
+        .map_err(|e| map_story_error("failed to delete story", e))?;
 
     if deleted {
         Ok(StatusCode::NO_CONTENT)
@@ -2057,10 +2042,7 @@ pub async fn get_story_viewers(
     let owner = service
         .get_story_owner(id)
         .await
-        .map_err(|err| {
-            tracing::error!(error = ?err, story_id = %id, "failed to check story ownership");
-            AppError::internal("failed to get story viewers")
-        })?;
+        .map_err(|e| map_story_error("failed to get story viewers", e))?;
 
     match owner {
         Some(owner_id) if owner_id == auth.user_id => {}
@@ -2071,10 +2053,7 @@ pub async fn get_story_viewers(
     let mut viewers = service
         .list_viewers(id, cursor, limit + 1)
         .await
-        .map_err(|err| {
-            tracing::error!(error = ?err, story_id = %id, "failed to list story viewers");
-            AppError::internal("failed to list story viewers")
-        })?;
+        .map_err(|e| map_story_error("failed to list story viewers", e))?;
 
     let next_cursor = if viewers.len() > limit as usize {
         viewers.pop().map(|last| (last.viewed_at, last.viewer_id))
@@ -2118,45 +2097,18 @@ pub async fn add_story_reaction(
     let reaction = service
         .add_reaction(id, auth.user_id, emoji_str.clone())
         .await
-        .map_err(|err| {
-            if let Some(sqlx_err) = err.downcast_ref::<sqlx::Error>() {
-                if let Some(db_err) = sqlx_err.as_database_error() {
-                    if let Some(code) = db_err.code() {
-                        if code == "23503" {
-                            return AppError::not_found("story not found");
-                        }
-                    }
-                }
-            }
-            tracing::error!(error = ?err, story_id = %id, user_id = %auth.user_id, "failed to add reaction");
-            AppError::internal("failed to add reaction")
-        })?;
+        .map_err(|e| map_story_error("failed to add reaction", e))?;
 
-    // Fire-and-forget notification for story reactions
     {
-        let db = state.db.clone();
-        let actor_id = auth.user_id;
-        let story_id = id;
-        tokio::spawn(async move {
-            let notif_svc = NotificationService::new(db.clone());
-            let owner_row = sqlx::query("SELECT user_id FROM stories WHERE id = $1")
-                .bind(story_id)
-                .fetch_optional(db.pool())
-                .await;
-            if let Ok(Some(row)) = owner_row {
-                let owner_id: Uuid = row.get("user_id");
-                let payload = serde_json::json!({
-                    "story_id": story_id.to_string(),
-                    "emoji": emoji_str,
-                });
-                if let Err(err) = notif_svc
-                    .create_if_not_self(owner_id, actor_id, "story_reaction", payload)
-                    .await
-                {
-                    tracing::warn!(error = ?err, "failed to create story reaction notification");
-                }
-            }
-        });
+        let job = NotificationJob::StoryReaction {
+            story_id: id,
+            actor_id: auth.user_id,
+            emoji: emoji_str,
+        };
+        if state.notification_tx.try_send(job).is_err() {
+            metrics::counter!("notifications_dropped_total").increment(1);
+            tracing::warn!("notification queue full; dropped story_reaction");
+        }
     }
 
     Ok(Json(reaction))
@@ -2179,10 +2131,7 @@ pub async fn list_story_reactions(
     let story = service
         .get_story(id, auth.user_id)
         .await
-        .map_err(|err| {
-            tracing::error!(error = ?err, story_id = %id, user_id = %auth.user_id, "failed to check story visibility");
-            AppError::internal("failed to list story reactions")
-        })?;
+        .map_err(|e| map_story_error("failed to list story reactions", e))?;
 
     if story.is_none() {
         return Err(AppError::not_found("story not found"));
@@ -2191,10 +2140,7 @@ pub async fn list_story_reactions(
     let mut reactions = service
         .list_reactions(id, cursor, limit + 1)
         .await
-        .map_err(|err| {
-            tracing::error!(error = ?err, story_id = %id, "failed to list story reactions");
-            AppError::internal("failed to list story reactions")
-        })?;
+        .map_err(|e| map_story_error("failed to list story reactions", e))?;
 
     let next_cursor = if reactions.len() > limit as usize {
         reactions.pop().map(|last| (last.created_at, last.id))
@@ -2218,10 +2164,7 @@ pub async fn remove_story_reaction(
     let removed = service
         .remove_reaction(id, auth.user_id)
         .await
-        .map_err(|err| {
-            tracing::error!(error = ?err, story_id = %id, user_id = %auth.user_id, "failed to remove reaction");
-            AppError::internal("failed to remove reaction")
-        })?;
+        .map_err(|e| map_story_error("failed to remove reaction", e))?;
 
     if removed {
         Ok(StatusCode::NO_CONTENT)
@@ -2240,19 +2183,7 @@ pub async fn mark_story_seen(
     service
         .mark_seen(id, auth.user_id)
         .await
-        .map_err(|err| {
-            if let Some(sqlx_err) = err.downcast_ref::<sqlx::Error>() {
-                if let Some(db_err) = sqlx_err.as_database_error() {
-                    if let Some(code) = db_err.code() {
-                        if code == "23503" {
-                            return AppError::not_found("story not found");
-                        }
-                    }
-                }
-            }
-            tracing::error!(error = ?err, story_id = %id, user_id = %auth.user_id, "failed to mark story seen");
-            AppError::internal("failed to mark story seen")
-        })?;
+        .map_err(|e| map_story_error("failed to mark story seen", e))?;
 
     Ok(StatusCode::NO_CONTENT)
 }
@@ -2273,10 +2204,7 @@ pub async fn get_stories_feed(
     let mut stories = service
         .get_stories_feed(auth.user_id, cursor, limit + 1)
         .await
-        .map_err(|err| {
-            tracing::error!(error = ?err, user_id = %auth.user_id, "failed to get stories feed");
-            AppError::internal("failed to get stories feed")
-        })?;
+        .map_err(|e| map_story_error("failed to get stories feed", e))?;
 
     let next_cursor = if stories.len() > limit as usize {
         stories.pop().map(|last| (last.created_at, last.id))
@@ -2305,10 +2233,7 @@ pub async fn get_story_metrics(
     let metrics = service
         .get_metrics(id, auth.user_id)
         .await
-        .map_err(|err| {
-            tracing::error!(error = ?err, story_id = %id, user_id = %auth.user_id, "failed to get story metrics");
-            AppError::internal("failed to get story metrics")
-        })?;
+        .map_err(|e| map_story_error("failed to get story metrics", e))?;
 
     match metrics {
         Some(metrics) => Ok(Json(metrics)),
@@ -2336,13 +2261,7 @@ pub async fn add_story_to_highlight(
     let highlight = service
         .add_to_highlight(auth.user_id, id, payload.highlight_name)
         .await
-        .map_err(|err| {
-            if err.to_string().contains("story not found") {
-                return AppError::not_found("story not found");
-            }
-            tracing::error!(error = ?err, story_id = %id, user_id = %auth.user_id, "failed to add to highlight");
-            AppError::internal("failed to add to highlight")
-        })?;
+        .map_err(|e| map_story_error("failed to add to highlight", e))?;
 
     Ok(Json(highlight))
 }
@@ -2364,10 +2283,7 @@ pub async fn get_user_highlights(
     let mut highlights = service
         .get_user_highlights(id, cursor, limit + 1)
         .await
-        .map_err(|err| {
-            tracing::error!(error = ?err, user_id = %id, "failed to get user highlights");
-            AppError::internal("failed to get user highlights")
-        })?;
+        .map_err(|e| map_story_error("failed to get user highlights", e))?;
 
     let next_cursor = if highlights.len() > limit as usize {
         highlights.pop().map(|last| (last.created_at, last.id))

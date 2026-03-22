@@ -1,7 +1,7 @@
-use anyhow::Result;
 use redis::AsyncCommands;
 use sqlx::postgres::PgRow;
 use sqlx::Row;
+use thiserror::Error;
 use time::OffsetDateTime;
 use uuid::Uuid;
 
@@ -9,6 +9,22 @@ use crate::domain::story::{
     EmojiCount, Story, StoryHighlight, StoryMetrics, StoryReaction, StoryView, StoryVisibility,
 };
 use crate::infra::{cache::RedisCache, db::Db};
+
+#[derive(Debug, Error)]
+pub enum StoryError {
+    #[error("media not found")]
+    MediaNotFound,
+    #[error("media does not belong to user")]
+    MediaNotOwned,
+    #[error("story not found")]
+    StoryNotFound,
+    #[error("unknown story visibility: {0}")]
+    UnknownVisibility(String),
+    #[error(transparent)]
+    Db(#[from] sqlx::Error),
+}
+
+pub type StoryResult<T> = std::result::Result<T, StoryError>;
 
 const STORY_TTL_HOURS: u64 = 24;
 const STORIES_FEED_CACHE_TTL: u64 = 60;
@@ -26,7 +42,7 @@ impl StoryService {
 
     /// Verify that a story exists and is owned by the given user (no expiry filter —
     /// owners retain access to their own story metadata after expiry).
-    pub async fn get_story_owner(&self, story_id: Uuid) -> Result<Option<Uuid>> {
+    pub async fn get_story_owner(&self, story_id: Uuid) -> StoryResult<Option<Uuid>> {
         Ok(sqlx::query_scalar("SELECT user_id FROM stories WHERE id = $1")
             .bind(story_id)
             .fetch_optional(self.db.pool())
@@ -39,7 +55,7 @@ impl StoryService {
         media_id: Uuid,
         caption: Option<String>,
         visibility: StoryVisibility,
-    ) -> Result<Story> {
+    ) -> StoryResult<Story> {
         let media_owner: Option<Uuid> = sqlx::query_scalar(
             "SELECT owner_id FROM media WHERE id = $1",
         )
@@ -49,8 +65,8 @@ impl StoryService {
 
         match media_owner {
             Some(owner) if owner == user_id => {}
-            Some(_) => return Err(anyhow::anyhow!("media does not belong to user")),
-            None => return Err(anyhow::anyhow!("media not found")),
+            Some(_) => return Err(StoryError::MediaNotOwned),
+            None => return Err(StoryError::MediaNotFound),
         }
 
         let expires_at =
@@ -85,7 +101,7 @@ impl StoryService {
         viewer_id: Uuid,
         cursor: Option<(OffsetDateTime, Uuid)>,
         limit: i64,
-    ) -> Result<Vec<Story>> {
+    ) -> StoryResult<Vec<Story>> {
         let now = OffsetDateTime::now_utc();
         let rows = match cursor {
             Some((created_at, story_id)) => {
@@ -153,10 +169,12 @@ impl StoryService {
             }
         };
 
-        rows.iter().map(row_to_story).collect()
+        rows.iter()
+            .map(|row| row_to_story(row))
+            .collect::<StoryResult<Vec<Story>>>()
     }
 
-    pub async fn get_story(&self, story_id: Uuid, viewer_id: Uuid) -> Result<Option<Story>> {
+    pub async fn get_story(&self, story_id: Uuid, viewer_id: Uuid) -> StoryResult<Option<Story>> {
         let now = OffsetDateTime::now_utc();
         let row = sqlx::query(
             "SELECT s.id, s.user_id, u.handle AS user_handle, u.display_name AS user_display_name, \
@@ -190,7 +208,7 @@ impl StoryService {
         }
     }
 
-    pub async fn delete_story(&self, story_id: Uuid, user_id: Uuid) -> Result<bool> {
+    pub async fn delete_story(&self, story_id: Uuid, user_id: Uuid) -> StoryResult<bool> {
         let result = sqlx::query("DELETE FROM stories WHERE id = $1 AND user_id = $2")
             .bind(story_id)
             .bind(user_id)
@@ -202,7 +220,7 @@ impl StoryService {
     /// Record a view. Returns true if this was the viewer's first view of the story.
     /// Uses a CTE to atomically insert the view record and increment the counter
     /// only when the insert succeeds (ON CONFLICT DO NOTHING skips duplicates).
-    pub async fn mark_seen(&self, story_id: Uuid, viewer_id: Uuid) -> Result<bool> {
+    pub async fn mark_seen(&self, story_id: Uuid, viewer_id: Uuid) -> StoryResult<bool> {
         let result = sqlx::query(
             "WITH view_insert AS ( \
                 INSERT INTO story_views (story_id, viewer_id) \
@@ -229,7 +247,7 @@ impl StoryService {
         story_id: Uuid,
         user_id: Uuid,
         emoji: String,
-    ) -> Result<StoryReaction> {
+    ) -> StoryResult<StoryReaction> {
         // xmax = 0 is true only for a fresh INSERT (not an ON CONFLICT UPDATE).
         let row = sqlx::query(
             "WITH upserted AS ( \
@@ -265,7 +283,7 @@ impl StoryService {
     }
 
     /// Remove a reaction and decrement the counter atomically via CTE.
-    pub async fn remove_reaction(&self, story_id: Uuid, user_id: Uuid) -> Result<bool> {
+    pub async fn remove_reaction(&self, story_id: Uuid, user_id: Uuid) -> StoryResult<bool> {
         let result = sqlx::query(
             "WITH deleted AS ( \
                 DELETE FROM story_reactions \
@@ -289,7 +307,7 @@ impl StoryService {
         story_id: Uuid,
         cursor: Option<(OffsetDateTime, Uuid)>,
         limit: i64,
-    ) -> Result<Vec<StoryReaction>> {
+    ) -> StoryResult<Vec<StoryReaction>> {
         let rows = match cursor {
             Some((created_at, reaction_id)) => {
                 sqlx::query(
@@ -343,7 +361,7 @@ impl StoryService {
         story_id: Uuid,
         cursor: Option<(OffsetDateTime, Uuid)>,
         limit: i64,
-    ) -> Result<Vec<StoryView>> {
+    ) -> StoryResult<Vec<StoryView>> {
         let rows = match cursor {
             Some((viewed_at, viewer_id)) => {
                 sqlx::query(
@@ -398,7 +416,7 @@ impl StoryService {
 
     /// Aggregate metrics for a story. Ownership is enforced by requiring user_id
     /// to match the story owner — returns None if the story doesn't belong to this user.
-    pub async fn get_metrics(&self, story_id: Uuid, user_id: Uuid) -> Result<Option<StoryMetrics>> {
+    pub async fn get_metrics(&self, story_id: Uuid, user_id: Uuid) -> StoryResult<Option<StoryMetrics>> {
         let counts = sqlx::query(
             "SELECT view_count, reaction_count FROM stories WHERE id = $1 AND user_id = $2",
         )
@@ -453,7 +471,7 @@ impl StoryService {
         user_id: Uuid,
         story_id: Uuid,
         highlight_name: String,
-    ) -> Result<StoryHighlight> {
+    ) -> StoryResult<StoryHighlight> {
         // Verify story ownership (highlights can persist beyond story expiry)
         let story_owner: Option<Uuid> = sqlx::query_scalar(
             "SELECT user_id FROM stories WHERE id = $1",
@@ -464,7 +482,7 @@ impl StoryService {
 
         match story_owner {
             Some(owner) if owner == user_id => {}
-            _ => return Err(anyhow::anyhow!("story not found")),
+            _ => return Err(StoryError::StoryNotFound),
         }
 
         // Upsert highlight; COALESCE keeps the existing cover if one is already set
@@ -520,7 +538,7 @@ impl StoryService {
         user_id: Uuid,
         cursor: Option<(OffsetDateTime, Uuid)>,
         limit: i64,
-    ) -> Result<Vec<StoryHighlight>> {
+    ) -> StoryResult<Vec<StoryHighlight>> {
         let rows = match cursor {
             Some((created_at, highlight_id)) => {
                 sqlx::query(
@@ -574,7 +592,7 @@ impl StoryService {
         user_id: Uuid,
         cursor: Option<(OffsetDateTime, Uuid)>,
         limit: i64,
-    ) -> Result<Vec<Story>> {
+    ) -> StoryResult<Vec<Story>> {
         let should_cache = cursor.is_none();
         let cache_key = format!("feed:stories:{}:{}", user_id, limit);
 
@@ -682,10 +700,10 @@ impl StoryService {
     }
 }
 
-fn row_to_story(row: &PgRow) -> Result<Story> {
-    let visibility: String = row.get("visibility");
-    let visibility = StoryVisibility::from_db(&visibility)
-        .ok_or_else(|| anyhow::anyhow!("unknown story visibility: {}", visibility))?;
+fn row_to_story(row: &PgRow) -> StoryResult<Story> {
+    let visibility_raw: String = row.get("visibility");
+    let visibility = StoryVisibility::from_db(&visibility_raw)
+        .ok_or_else(|| StoryError::UnknownVisibility(visibility_raw))?;
 
     Ok(Story {
         id: row.get("id"),

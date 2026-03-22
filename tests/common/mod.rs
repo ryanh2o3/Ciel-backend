@@ -13,7 +13,10 @@ use serde_json::Value;
 use sqlx::postgres::PgPoolOptions;
 use sqlx::PgPool;
 use std::net::SocketAddr;
+use std::sync::Arc;
+use tokio::sync::mpsc;
 use tokio::sync::OnceCell;
+use tokio_util::sync::CancellationToken;
 use tower::ServiceExt;
 use uuid::Uuid;
 
@@ -215,11 +218,25 @@ impl TestApp {
             .await
             .expect("QueueClient::new failed");
 
+        let metrics = metrics_exporter_prometheus::PrometheusBuilder::new()
+            .install_recorder()
+            .expect("failed to install metrics recorder for tests");
+
+        let db_notif = db.clone();
+        let (notification_tx, notification_rx) = mpsc::channel(2048);
+        let bg = CancellationToken::new();
+        let sd = bg.clone();
+        tokio::spawn(async move {
+            ciel::jobs::notifications::run_notification_worker(notification_rx, db_notif, sd).await;
+        });
+        drop(bg);
+
         let state = AppState {
             db,
             cache,
             storage,
             queue,
+            metrics,
             upload_url_ttl_seconds: config.upload_url_ttl_seconds,
             upload_max_bytes: config.upload_max_bytes,
             admin_token: config.admin_token.clone(),
@@ -229,6 +246,8 @@ impl TestApp {
             refresh_ttl_days: config.refresh_ttl_days,
             s3_public_endpoint: config.s3_public_endpoint,
             ip_signup_rate_limit: 100,
+            trusted_proxy_cidrs: Arc::new(config.trusted_proxy_cidrs.clone()),
+            notification_tx,
         };
 
         let router = ciel::http::router(state.clone());

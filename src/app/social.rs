@@ -1,10 +1,21 @@
 use anyhow::Result;
 use sqlx::Row;
+use thiserror::Error;
 use time::OffsetDateTime;
 use uuid::Uuid;
 
 use crate::domain::user::User;
 use crate::infra::db::Db;
+
+#[derive(Debug, Error)]
+pub enum SocialError {
+    #[error("user not found")]
+    UserNotFound,
+    #[error("follower limit reached")]
+    FollowerLimitReached,
+    #[error(transparent)]
+    Db(#[from] sqlx::Error),
+}
 
 #[derive(Clone)]
 pub struct SocialService {
@@ -30,7 +41,7 @@ impl SocialService {
         Self { db }
     }
 
-    pub async fn follow(&self, follower_id: Uuid, followee_id: Uuid) -> Result<bool> {
+    pub async fn follow(&self, follower_id: Uuid, followee_id: Uuid) -> Result<bool, SocialError> {
         const MAX_FOLLOWERS: i64 = 5000;
 
         let mut tx = self.db.pool().begin().await?;
@@ -41,7 +52,8 @@ impl SocialService {
             .await?;
 
         if user_exists.is_none() {
-            return Err(anyhow::anyhow!("user not found"));
+            tx.rollback().await?;
+            return Err(SocialError::UserNotFound);
         }
 
         let follower_count: i64 = sqlx::query_scalar(
@@ -53,7 +65,7 @@ impl SocialService {
 
         if follower_count >= MAX_FOLLOWERS {
             tx.rollback().await?;
-            return Err(anyhow::anyhow!("follower limit reached"));
+            return Err(SocialError::FollowerLimitReached);
         }
 
         let result = sqlx::query(

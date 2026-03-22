@@ -3,10 +3,23 @@ use rand::distributions::Alphanumeric;
 use rand::{thread_rng, Rng};
 use serde::{Deserialize, Serialize};
 use sqlx::{Postgres, Row, Transaction};
+use thiserror::Error;
 use time::OffsetDateTime;
 use uuid::Uuid;
 
 use crate::infra::db::Db;
+
+#[derive(Debug, Error)]
+pub enum InviteError {
+    #[error("user trust score not found")]
+    TrustScoreNotFound,
+    #[error("maximum invite limit reached for your trust level ({0})")]
+    InviteLimitReached(i32),
+    #[error("failed to generate unique invite code after several attempts")]
+    CodeGenerationFailed,
+    #[error(transparent)]
+    Db(#[from] sqlx::Error),
+}
 
 #[derive(Clone)]
 pub struct InviteService {
@@ -40,7 +53,7 @@ impl InviteService {
         &self,
         user_id: Uuid,
         days_valid: i64,
-    ) -> Result<InviteCode> {
+    ) -> std::result::Result<InviteCode, InviteError> {
         let mut tx = self.db.pool().begin().await?;
 
         // Check user's invite quota
@@ -60,7 +73,7 @@ impl InviteService {
                 row.get::<i32, _>("invites_sent"),
                 row.get::<i32, _>("successful_invites"),
             ),
-            None => return Err(anyhow!("User trust score not found")),
+            None => return Err(InviteError::TrustScoreNotFound),
         };
 
         // Calculate max invites based on trust level
@@ -73,10 +86,7 @@ impl InviteService {
         };
 
         if invites_sent >= max_invites {
-            return Err(anyhow!(
-                "Maximum invite limit reached for your trust level ({})",
-                max_invites
-            ));
+            return Err(InviteError::InviteLimitReached(max_invites));
         }
 
         // Generate unique code
@@ -127,7 +137,10 @@ impl InviteService {
     }
 
     /// Generate an admin invite code (no owning user required)
-    pub async fn create_admin_invite(&self, days_valid: i64) -> Result<InviteCode> {
+    pub async fn create_admin_invite(
+        &self,
+        days_valid: i64,
+    ) -> std::result::Result<InviteCode, InviteError> {
         let code = self.generate_unique_code().await?;
         let expires_at = OffsetDateTime::now_utc() + time::Duration::days(days_valid);
 
@@ -157,7 +170,7 @@ impl InviteService {
     }
 
     /// Generate a unique invite code
-    async fn generate_unique_code(&self) -> Result<String> {
+    async fn generate_unique_code(&self) -> std::result::Result<String, InviteError> {
         for _ in 0..10 {
             // Try up to 10 times
             let candidate: String = thread_rng()
@@ -180,7 +193,7 @@ impl InviteService {
             }
         }
 
-        Err(anyhow!("Failed to generate unique invite code after 10 attempts"))
+        Err(InviteError::CodeGenerationFailed)
     }
 
     /// Validate and consume an invite code during signup

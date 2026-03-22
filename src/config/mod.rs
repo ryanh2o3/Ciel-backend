@@ -3,6 +3,7 @@ pub mod rate_limits;
 use anyhow::{anyhow, Result};
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
+use ipnet::IpNet;
 use std::net::SocketAddr;
 use std::str::FromStr;
 
@@ -34,6 +35,10 @@ pub struct AppConfig {
     pub refresh_ttl_days: u64,
     pub ip_signup_rate_limit: u32,
     pub s3_force_path_style: bool,
+    /// When the immediate peer is in one of these CIDRs, `X-Forwarded-For` / `X-Forwarded-Proto` are honored.
+    pub trusted_proxy_cidrs: Vec<IpNet>,
+    /// Capacity for best-effort in-process notification jobs (`try_send` drops when full).
+    pub notification_queue_capacity: usize,
 }
 
 impl AppConfig {
@@ -76,8 +81,25 @@ impl AppConfig {
             refresh_ttl_days: env_or_parse("REFRESH_TTL_DAYS", "30")?,
             ip_signup_rate_limit: env_or_parse("IP_SIGNUP_RATE_LIMIT", "3")?,
             s3_force_path_style: env_or("S3_FORCE_PATH_STYLE", "false") == "true",
+            trusted_proxy_cidrs: parse_trusted_proxy_cidrs(&env_or("TRUSTED_PROXY_CIDRS", ""))?,
+            notification_queue_capacity: env_or_parse("NOTIFICATION_QUEUE_CAPACITY", "2048")?,
         })
     }
+}
+
+fn parse_trusted_proxy_cidrs(raw: &str) -> Result<Vec<IpNet>> {
+    let mut out = Vec::new();
+    for part in raw.split(',') {
+        let t = part.trim();
+        if t.is_empty() {
+            continue;
+        }
+        let net: IpNet = t
+            .parse()
+            .map_err(|_| anyhow!("invalid CIDR in TRUSTED_PROXY_CIDRS: {}", t))?;
+        out.push(net);
+    }
+    Ok(out)
 }
 
 fn env_or(key: &str, default: &str) -> String {

@@ -24,6 +24,8 @@ pub use logging::internal_err;
 pub use logging::internal_err_user;
 
 pub fn router(state: AppState) -> Router {
+    let request_ctx_state = state.clone();
+
     // M8: Versioned API routes under /v1
     let v1_routes = Router::new()
         // Auth routes with IP rate limiting
@@ -171,6 +173,11 @@ pub fn router(state: AppState) -> Router {
         // M3: Request ID
         .layer(SetRequestIdLayer::x_request_id(MakeRequestUuid))
         .layer(PropagateRequestIdLayer::x_request_id())
+        // Trusted-proxy-aware client IP + scheme (before security / IP rate limits)
+        .layer(axum_middleware::from_fn_with_state(
+            request_ctx_state,
+            middleware::request_context::request_context_middleware,
+        ))
         // Security headers and HTTPS enforcement
         .layer(axum_middleware::from_fn(
             middleware::security::security_headers_middleware,
