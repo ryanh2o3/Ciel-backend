@@ -177,6 +177,10 @@ jobs:
     needs: [build-and-push, terraform-plan]
     if: github.event_name != 'pull_request' && (github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main')
     runs-on: ubuntu-latest
+    # Push docs-site deploy secrets from Terraform outputs (no local terraform needed).
+    permissions:
+      contents: read
+      secrets: write
     strategy:
       matrix:
         environment: [dev]
@@ -225,6 +229,38 @@ jobs:
           SCW_DEFAULT_ORGANIZATION_ID: ${{ secrets.SCW_ORGANIZATION_ID }}
           AWS_ACCESS_KEY_ID: ${{ secrets.SCW_ACCESS_KEY }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.SCW_SECRET_KEY }}
+
+      # Docs workflow needs DOCS_* secrets; values live in remote state after apply.
+      # Pipe straight into `gh secret set` so sensitive values are not printed to the log.
+      - name: Sync docs-site secrets from Terraform outputs
+        id: sync-docs-secrets
+        if: success()
+        working-directory: terraform/environments/${{ matrix.environment }}
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if ! terraform output -json docs_bucket_name >/dev/null 2>&1; then
+            echo "No docs_bucket_name output; skipping DOCS_* secrets."
+            exit 0
+          fi
+          BUCKET=$(terraform output -raw docs_bucket_name)
+          if [ -z "$BUCKET" ] || [ "$BUCKET" = "null" ]; then
+            echo "Docs bucket disabled for this environment; skipping."
+            exit 0
+          fi
+          terraform output -raw docs_bucket_name | gh secret set DOCS_BUCKET_NAME --repo "${{ github.repository }}"
+          terraform output -raw docs_deploy_access_key | gh secret set DOCS_SCW_ACCESS_KEY --repo "${{ github.repository }}"
+          terraform output -raw docs_deploy_secret_key | gh secret set DOCS_SCW_SECRET_KEY --repo "${{ github.repository }}"
+          echo "### Docs site" >> "$GITHUB_STEP_SUMMARY"
+          echo "Updated repository secrets: \`DOCS_BUCKET_NAME\`, \`DOCS_SCW_ACCESS_KEY\`, \`DOCS_SCW_SECRET_KEY\` (from Terraform outputs)." >> "$GITHUB_STEP_SUMMARY"
+          echo "Run the **Docs site** workflow or push to \`docs-site/**\` to deploy static files." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Docs-site secrets hint (if sync step failed)
+        if: success() && steps.sync-docs-secrets.outcome == 'failure'
+        run: |
+          echo "::warning::Automatic DOCS_* secret sync failed (permissions or gh CLI). Set DOCS_BUCKET_NAME, DOCS_SCW_ACCESS_KEY, DOCS_SCW_SECRET_KEY manually — see docs-site/README.md."
 
   # Database migrations now run on the instance via cloud-init (after docker compose up).
   # The instance is on the private network and can reach the database directly.

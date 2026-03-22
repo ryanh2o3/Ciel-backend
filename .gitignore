@@ -19,3 +19,16 @@ override.tf.json
 CLAUDE.md
 data
 
+# docs-site (Next.js / static export)
+docs-site/.next/
+docs-site/out/
+docs-site/node_modules/
+docs-site/.turbo/
+docs-site/.vercel/
+docs-site/coverage/
+docs-site/.eslintcache
+docs-site/*.tsbuildinfo
+docs-site/npm-debug.log*
+docs-site/yarn-debug.log*
+docs-site/yarn-error.log*
+docs-site/pnpm-debug.log*

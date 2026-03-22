@@ -61,3 +61,15 @@ variable "load_balancer_id" {
   type        = string
   default     = null
 }
+
+variable "enable_docs_dns" {
+  description = "Create docs.<domain> CNAME to static docs bucket website hostname"
+  type        = bool
+  default     = false
+}
+
+variable "docs_cname_target" {
+  description = "scaleway_object_bucket_website_configuration.website_domain value"
+  type        = string
+  default     = ""
+}

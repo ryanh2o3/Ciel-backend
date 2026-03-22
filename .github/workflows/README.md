@@ -1,6 +1,16 @@
-# Scaleway Terraform CI/CD Workflow
+# GitHub Actions workflows
 
-This GitHub Actions workflow automates the deployment of the Ciel backend to Scaleway infrastructure.
+## Docs site (`docs.yml`)
+
+Builds the Next.js static export under `docs-site/` and syncs `out/` to a Scaleway Object Storage bucket (S3 API). Runs on pushes to `main` that touch `docs-site/**`, on related pull requests (build only), and via **workflow_dispatch**.
+
+**Secrets:** Prefer letting **deploy.yml** populate them: after Terraform apply, the job **Sync docs-site secrets from Terraform outputs** sets `DOCS_BUCKET_NAME`, `DOCS_SCW_ACCESS_KEY`, and `DOCS_SCW_SECRET_KEY` from state (needs job permission `secrets: write`). If that step fails, set them manually; see [docs-site/README.md](../../docs-site/README.md).
+
+---
+
+## Scaleway Terraform CI/CD (`deploy.yml`)
+
+This workflow automates the deployment of the Ciel backend to Scaleway infrastructure.
 
 ## Workflow Overview
 

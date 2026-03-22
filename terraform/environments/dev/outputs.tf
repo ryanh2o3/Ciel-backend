@@ -81,3 +81,55 @@ output "cdn_dns_record" {
   description = "CDN DNS record"
   value       = var.enable_dns ? module.dns[0].cdn_dns_record : null
 }
+
+output "docs_bucket_name" {
+  description = "Static documentation site bucket (GitHub Actions DOCS_BUCKET_NAME)"
+  value       = var.enable_docs_hosting ? module.docs_site[0].bucket_name : null
+}
+
+output "docs_website_domain" {
+  description = "Bucket website hostname (legacy; prefer docs_dns_cname_target)"
+  value       = var.enable_docs_hosting ? module.docs_site[0].website_domain : null
+}
+
+output "docs_dns_cname_target" {
+  description = "CNAME target for docs subdomain (Edge .svc.edge.scw.cloud or bucket website)"
+  value       = var.enable_docs_hosting ? module.docs_site[0].dns_cname_target : null
+}
+
+output "docs_public_url" {
+  description = "URL for the documentation site"
+  value       = var.enable_docs_hosting ? module.docs_site[0].docs_https_url : null
+}
+
+output "docs_edge_pipeline_id" {
+  description = "Edge Services pipeline ID for docs (empty if Edge disabled)"
+  value       = var.enable_docs_hosting ? module.docs_site[0].edge_pipeline_id : null
+}
+
+output "docs_s3_api_endpoint" {
+  description = "S3 endpoint URL for aws s3 sync (e.g. https://s3.fr-par.scw.cloud)"
+  value       = var.enable_docs_hosting ? module.docs_site[0].s3_api_endpoint : null
+}
+
+output "docs_deploy_access_key" {
+  description = "IAM access key for uploading docs (sensitive: pair with secret in CI)"
+  value       = var.enable_docs_hosting ? module.docs_site[0].docs_deploy_access_key : null
+  sensitive   = true
+}
+
+output "docs_deploy_secret_key" {
+  description = "IAM secret key for DOCS_SCW_SECRET_KEY in GitHub Actions"
+  value       = var.enable_docs_hosting ? module.docs_site[0].docs_deploy_secret_key : null
+  sensitive   = true
+}
+
+output "docs_https_note" {
+  description = "TLS / Edge Services reminder for docs custom domain"
+  value       = var.enable_docs_hosting ? module.docs_site[0].https_note : null
+}
+
+output "docs_dns_record" {
+  description = "FQDN for docs subdomain when DNS module created the record"
+  value       = var.enable_dns && var.enable_docs_hosting ? module.dns[0].docs_dns_record : null
+}

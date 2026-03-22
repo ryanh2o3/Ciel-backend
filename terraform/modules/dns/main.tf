@@ -13,6 +13,18 @@ resource "scaleway_domain_record" "api" {
   priority = null
 }
 
+# Static documentation site — CNAME to Edge (<id>.svc.edge.scw.cloud) or bucket website host
+resource "scaleway_domain_record" "docs" {
+  count = var.enable_docs_dns && var.docs_cname_target != "" ? 1 : 0
+
+  dns_zone = var.domain_name
+  name     = "docs"
+  type     = "CNAME"
+  data     = var.docs_cname_target
+  ttl      = 300
+  priority = null
+}
+
 # Domain records for CDN/media
 resource "scaleway_domain_record" "cdn" {
   count = var.enable_cdn_dns ? 1 : 0

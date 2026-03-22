@@ -92,6 +92,18 @@ variable "enable_dns" {
   default     = true
 }
 
+variable "enable_docs_hosting" {
+  description = "Provision Object Storage bucket + website for PicShare static docs (docs.ciel-social.eu when DNS enabled)"
+  type        = bool
+  default     = true
+}
+
+variable "enable_docs_edge_services" {
+  description = "Put Scaleway Edge Services (HTTPS, managed cert, cache) in front of the docs bucket"
+  type        = bool
+  default     = true
+}
+
 variable "scw_secret_key" {
   description = "Scaleway secret key (for IAM-scoped cloud-init secret fetching)"
   type        = string

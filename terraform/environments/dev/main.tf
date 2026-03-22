@@ -235,6 +235,21 @@ module "observability" {
   enable_alerts = false  # No alerts for dev
 }
 
+# Static docs site (Markdown → Next export → S3 sync; see docs-site/ and .github/workflows/docs.yml)
+module "docs_site" {
+  count  = var.enable_docs_hosting ? 1 : 0
+  source = "../../modules/docs_site"
+
+  project_id  = var.project_id
+  region      = var.region
+  environment = local.environment
+  app_name    = local.app_name
+  tags        = local.tags
+
+  docs_fqdn            = "docs.${var.domain_name}"
+  enable_edge_services = var.enable_docs_edge_services
+}
+
 # DNS Module — points api.ciel-social.eu at the load balancer IP
 module "dns" {
   source = "../../modules/dns"
@@ -254,6 +269,9 @@ module "dns" {
   enable_www_dns  = true
   enable_root_dns = true
   enable_ssl      = true
+
+  enable_docs_dns   = var.enable_docs_hosting
+  docs_cname_target = length(module.docs_site) > 0 ? module.docs_site[0].dns_cname_target : ""
 }
 
 # ============================================================

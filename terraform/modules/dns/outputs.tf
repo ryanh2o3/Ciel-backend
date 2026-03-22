@@ -10,6 +10,11 @@ output "cdn_dns_record" {
   value       = var.enable_cdn_dns ? scaleway_domain_record.cdn[0].fqdn : null
 }
 
+output "docs_dns_record" {
+  description = "DNS record for static docs (docs subdomain)"
+  value       = var.enable_docs_dns && length(scaleway_domain_record.docs) > 0 ? scaleway_domain_record.docs[0].fqdn : null
+}
+
 output "www_dns_record" {
   description = "DNS record for www"
   value       = var.enable_www_dns ? scaleway_domain_record.www[0].fqdn : null
