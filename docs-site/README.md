@@ -23,7 +23,7 @@ npx serve out
 
 ## Deploy (Scaleway)
 
-1. **Terraform** (`terraform/environments/dev`) provisions a dedicated Object Storage bucket, bucket website config (`index.html` / `404.html`), IAM keys for CI, and optional `docs` **CNAME** on `ciel-social.eu`. See Terraform outputs: `docs_bucket_name`, `docs_deploy_*`, `docs_https_note`.
+1. **Terraform** (`terraform/environments/dev`) provisions a dedicated Object Storage bucket, bucket website config (`index.html` / `404.html`), IAM keys for CI, Edge Services (optional), and optional `docs` **CNAME** on `ciel-social.eu`. After **GitHub Actions** apply, open the run → **Summary** tab for selected outputs (`docs_bucket_name`, `docs_public_url`, etc.), or the **Terraform Apply** job log for the full apply stream.
 2. **GitHub Actions** (`.github/workflows/docs.yml`) runs on changes under `docs-site/` and syncs `out/` with `aws s3 sync` to Scaleway (`https://s3.fr-par.scw.cloud`).
 
 Repository secrets (for `.github/workflows/docs.yml`):
@@ -34,7 +34,7 @@ Repository secrets (for `.github/workflows/docs.yml`):
 | `DOCS_SCW_ACCESS_KEY` | IAM access key that can write the bucket |
 | `DOCS_SCW_SECRET_KEY` | IAM secret key |
 
-**Without a local Terraform run:** after a successful **Scaleway Terraform CI/CD** apply on `main`, the **Sync docs-site secrets from Terraform outputs** step in `.github/workflows/deploy.yml` tries to set these three secrets via the GitHub API (values piped from `terraform output -raw`, not printed in logs). That requires the workflow job permission `secrets: write` (default for the repo token on same-repo pushes; some orgs restrict this — if the step fails, set the secrets manually or fix org policy).
+**Without a local Terraform run:** after apply, `.github/workflows/deploy.yml` includes a step that tries **`gh secret set`** using `GITHUB_TOKEN`. GitHub does **not** allow the default token to create repository secrets, so that step usually **fails** (it is `continue-on-error`). Set **`DOCS_BUCKET_NAME`**, **`DOCS_SCW_ACCESS_KEY`**, and **`DOCS_SCW_SECRET_KEY`** manually from `terraform output` (or use a **classic PAT** with `repo` / **fine-grained token** with “Secrets” write, stored as e.g. `GH_REPO_SECRETS_PAT`, and wire the workflow to use it instead of `github.token` if you want full automation).
 
 **HTTPS:** Terraform provisions **Scaleway Edge Services** (managed Let’s Encrypt) for `docs_fqdn` by default. See `terraform/modules/docs_site` and `terraform output docs_public_url` / `docs_https_note`. Turn off with `enable_docs_edge_services` (dev) or module `enable_edge_services` if you need bucket-only HTTP.
 

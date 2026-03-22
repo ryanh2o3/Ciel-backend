@@ -177,10 +177,7 @@ jobs:
     needs: [build-and-push, terraform-plan]
     if: github.event_name != 'pull_request' && (github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main')
     runs-on: ubuntu-latest
-    # Push docs-site deploy secrets from Terraform outputs (no local terraform needed).
-    permissions:
-      contents: read
-      secrets: write
+    # Optional: sync DOCS_* repo secrets via gh CLI (often fails with GITHUB_TOKEN — use a PAT or set secrets manually; see docs-site/README.md).
     strategy:
       matrix:
         environment: [dev]
@@ -229,6 +226,24 @@ jobs:
           SCW_DEFAULT_ORGANIZATION_ID: ${{ secrets.SCW_ORGANIZATION_ID }}
           AWS_ACCESS_KEY_ID: ${{ secrets.SCW_ACCESS_KEY }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.SCW_SECRET_KEY }}
+
+      # Non-sensitive outputs: open the workflow run → Summary tab (or expand this step’s log).
+      - name: Terraform outputs (job summary)
+        if: success()
+        working-directory: terraform/environments/${{ matrix.environment }}
+        run: |
+          {
+            echo "## Terraform outputs (${{ matrix.environment }})"
+            echo ""
+            echo "Sensitive outputs (e.g. \`docs_deploy_secret_key\`, database URLs) are **not** printed. With repo + Scaleway state access locally: \`terraform output\` or \`terraform output -raw <name>\`."
+            echo ""
+          } >> "$GITHUB_STEP_SUMMARY"
+          for name in docs_bucket_name docs_dns_cname_target docs_public_url docs_edge_pipeline_id docs_dns_record docs_website_domain; do
+            val=$(terraform output -raw "$name" 2>/dev/null) || continue
+            if [ -n "$val" ] && [ "$val" != "null" ]; then
+              echo "- **${name}**: \`${val}\`" >> "$GITHUB_STEP_SUMMARY"
+            fi
+          done
 
       # Docs workflow needs DOCS_* secrets; values live in remote state after apply.
       # Pipe straight into `gh secret set` so sensitive values are not printed to the log.

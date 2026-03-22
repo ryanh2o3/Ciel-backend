@@ -4,7 +4,7 @@
 
 Builds the Next.js static export under `docs-site/` and syncs `out/` to a Scaleway Object Storage bucket (S3 API). Runs on pushes to `main` that touch `docs-site/**`, on related pull requests (build only), and via **workflow_dispatch**.
 
-**Secrets:** Prefer letting **deploy.yml** populate them: after Terraform apply, the job **Sync docs-site secrets from Terraform outputs** sets `DOCS_BUCKET_NAME`, `DOCS_SCW_ACCESS_KEY`, and `DOCS_SCW_SECRET_KEY` from state (needs job permission `secrets: write`). If that step fails, set them manually; see [docs-site/README.md](../../docs-site/README.md).
+**Secrets:** **deploy.yml** attempts to set `DOCS_*` via `gh secret set`; **`GITHUB_TOKEN` cannot manage repo secrets**, so expect that step to skip/fail and set the three secrets manually from Terraform outputs (or add a PAT to the workflow). See [docs-site/README.md](../../docs-site/README.md).
 
 ---
 
