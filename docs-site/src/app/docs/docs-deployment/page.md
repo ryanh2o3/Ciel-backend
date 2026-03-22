@@ -20,7 +20,7 @@ Open `out/` with any static file server, e.g. `npx serve out`.
 
 ## CI/CD
 
-GitHub Actions workflow **`.github/workflows/docs.yml`** builds on push to `main` (and on pull requests without upload) and syncs `out/` to the docs bucket using the S3 API against Scaleway’s endpoint.
+GitHub Actions workflow **`.github/workflows/docs.yml`** builds on push to `main` (and on pull requests without upload) and uploads `out/` with **`s3cmd`**, using **`scw object config get type=s3cmd`** for Scaleway-compatible credentials (no AWS CLI / STS).
 
 **Secrets** (repository):
 

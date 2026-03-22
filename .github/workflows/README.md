@@ -2,9 +2,9 @@
 
 ## Docs site (`docs.yml`)
 
-Builds the Next.js static export under `docs-site/` and syncs `out/` to a Scaleway Object Storage bucket (S3 API). Runs on pushes to `main` that touch `docs-site/**`, on related pull requests (build only), and via **workflow_dispatch**.
+Builds the Next.js static export under `docs-site/` and uploads `out/` with **`s3cmd`** + Scaleway CLI (`scw object config get type=s3cmd`). Runs on pushes to `main` that touch `docs-site/**`, on related pull requests (build only), and via **workflow_dispatch**.
 
-**Secrets:** **deploy.yml** attempts to set `DOCS_*` via `gh secret set`; **`GITHUB_TOKEN` cannot manage repo secrets**, so expect that step to skip/fail and set the three secrets manually from Terraform outputs (or add a PAT to the workflow). See [docs-site/README.md](../../docs-site/README.md).
+**Secrets:** `DOCS_BUCKET_NAME`, `DOCS_SCW_ACCESS_KEY`, `DOCS_SCW_SECRET_KEY`, plus `SCW_PROJECT_ID` and `SCW_ORGANIZATION_ID` (same as the main deploy workflow) for the CLI. **deploy.yml** may try to set `DOCS_*` via `gh` (often fails without a PAT); set them from Terraform outputs if needed. See [docs-site/README.md](../../docs-site/README.md).
 
 ---
 

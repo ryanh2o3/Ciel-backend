@@ -16,7 +16,7 @@ permissions:
   contents: read
 
 env:
-  SCW_REGION: fr-par
+  SCW_DEFAULT_REGION: fr-par
 
 jobs:
   build:
@@ -49,10 +49,12 @@ jobs:
           path: docs-site/out
 
   deploy:
-    name: Deploy to Scaleway Object Storage
+    name: Upload to Scaleway Object Storage
     needs: build
     if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-latest
+    env:
+      SCW_DEFAULT_REGION: fr-par
     steps:
       - name: Download artifact
         uses: actions/download-artifact@v4
@@ -60,16 +62,20 @@ jobs:
           name: docs-out
           path: out
 
-      - name: Configure AWS CLI for Scaleway S3
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.SCW_ACCESS_KEY }}
-          aws-secret-access-key: ${{ secrets.SCW_SECRET_KEY }}
-          aws-region: ${{ env.SCW_REGION }}
+      - name: Install s3cmd
+        run: sudo apt-get update && sudo apt-get install -y s3cmd
 
-      - name: Sync to bucket
+      - name: Install Scaleway CLI
+        uses: scaleway/action-scw@v0
+        with:
+          version: v2.37.0
+          access-key: ${{ secrets.SCW_ACCESS_KEY }}
+          secret-key: ${{ secrets.SCW_SECRET_KEY }}
+          default-project-id: ${{ secrets.SCW_PROJECT_ID }}
+          default-organization-id: ${{ secrets.SCW_ORGANIZATION_ID }}
+          save-config: true
+
+      - name: Sync site to bucket
         run: |
-          aws s3 sync out/ "s3://${{ secrets.DOCS_BUCKET_NAME }}/" \
-            --delete \
-            --endpoint-url "https://s3.${SCW_REGION}.scw.cloud" \
-            --region "${SCW_REGION}"
+          scw object config get type=s3cmd > "$HOME/.s3cfg"
+          s3cmd --no-mime-magic --guess-mime-type sync out/ "s3://${{ secrets.DOCS_BUCKET_NAME }}/" --delete
