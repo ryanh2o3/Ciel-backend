@@ -13,9 +13,10 @@ resource "scaleway_domain_record" "api" {
   priority = null
 }
 
-# Static documentation site — CNAME to Edge (<id>.svc.edge.scw.cloud) or bucket website host
+# Static documentation site — CNAME to Edge (<id>.svc.edge.scw.cloud) or bucket website host.
+# count must NOT depend on docs_cname_target: with Edge, that value includes the pipeline id (known only after apply).
 resource "scaleway_domain_record" "docs" {
-  count = var.enable_docs_dns && var.docs_cname_target != "" ? 1 : 0
+  count = var.enable_docs_dns ? 1 : 0
 
   dns_zone = var.domain_name
   name     = "docs"

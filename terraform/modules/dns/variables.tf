@@ -63,13 +63,13 @@ variable "load_balancer_id" {
 }
 
 variable "enable_docs_dns" {
-  description = "Create docs.<domain> CNAME to static docs bucket website hostname"
+  description = "Create docs.<domain> CNAME (target is docs_cname_target; enable only when that target will be set)"
   type        = bool
   default     = false
 }
 
 variable "docs_cname_target" {
-  description = "scaleway_object_bucket_website_configuration.website_domain value"
+  description = "CNAME data: Edge <pipeline-id>.svc.edge.scw.cloud or bucket website_domain (may be unknown at plan time)"
   type        = string
   default     = ""
 }
