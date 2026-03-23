@@ -69,7 +69,7 @@ resource "scaleway_object_bucket_policy" "docs" {
   region = var.region
 
   policy = jsonencode({
-    Version = "2012-10-17"
+    Version = "2023-04-17"
     Id      = "DocsSiteBucketPolicy"
     Statement = [
       {
