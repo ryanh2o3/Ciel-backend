@@ -39,4 +39,4 @@ The **worker** runs the media pipeline: messages from SQS trigger processing (e.
 
 ## Monorepo context
 
-PicShare splits **backend**, **iOS**, and **Android** into sibling projects. Clients talk to Ciel only over HTTPS; they do not share Rust code with the server.
+Ciel Social splits **backend**, **iOS**, and **Android** into sibling projects. Clients talk to Ciel only over HTTPS; they do not share Rust code with the server.

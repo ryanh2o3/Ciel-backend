@@ -2,7 +2,7 @@
 title: Components and integrations
 ---
 
-How major infrastructure pieces work together in a typical PicShare deployment.
+How major infrastructure pieces work together in a typical Ciel Social deployment.
 
 ---
 

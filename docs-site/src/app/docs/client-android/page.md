@@ -2,14 +2,14 @@
 title: Android app
 ---
 
-PicShare **Android** uses **Jetpack Compose** and **Clean Architecture**-style modules.
+Ciel Social **Android** uses **Jetpack Compose** and **Clean Architecture**-style modules.
 
 ---
 
 ## Layout (typical)
 
 ```text
-app/src/main/java/com/picshare/android/
+app/src/main/java/com/ciel/social/android/
 ├── core/          # Hilt modules, Retrofit/OkHttp, Room, auth
 ├── data/          # Repository implementations, API models, mappers
 ├── domain/        # Use cases, models, repository interfaces

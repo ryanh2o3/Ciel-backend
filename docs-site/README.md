@@ -1,6 +1,6 @@
-# PicShare documentation (Syntax template)
+# Ciel documentation (Syntax template)
 
-Static documentation for **PicShare** and the **Ciel** backend. Built with [Tailwind Plus Syntax](https://tailwindcss.com/plus/templates/syntax), [Next.js](https://nextjs.org), and [Markdoc](https://markdoc.io).
+Static documentation for **Ciel Social** and the **Ciel** backend. Built with [Tailwind Plus Syntax](https://tailwindcss.com/plus/templates/syntax), [Next.js](https://nextjs.org), and [Markdoc](https://markdoc.io).
 
 ## Local development
 

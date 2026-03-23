@@ -23,11 +23,11 @@ const lexend = localFont({
 
 export const metadata: Metadata = {
   title: {
-    template: '%s - PicShare Docs',
-    default: 'PicShare & Ciel — documentation',
+    template: '%s - Ciel Docs',
+    default: 'Ciel Social & Ciel — documentation',
   },
   description:
-    'Architecture, API reference, and operations notes for the PicShare photo social platform and the Ciel Rust backend.',
+    'Architecture, API reference, and operations notes for the Ciel Social photo social platform and the Ciel Rust backend.',
 }
 
 export default function RootLayout({

@@ -2,11 +2,11 @@
 title: Getting started
 ---
 
-PicShare is a photo-only social platform. **Ciel** is the Rust (Axum) backend and media worker; native **iOS** (SwiftUI) and **Android** (Jetpack Compose) apps consume its HTTP API. {% .lead %}
+Ciel Social is a photo-only social platform. **Ciel** is the Rust (Axum) backend and media worker; native **iOS** (SwiftUI) and **Android** (Jetpack Compose) apps consume its HTTP API. {% .lead %}
 
 {% quick-links %}
 
-{% quick-link title="Overview" icon="installation" href="/docs/overview/" description="What PicShare is, how the monorepo is organized, and where to read next." /%}
+{% quick-link title="Overview" icon="installation" href="/docs/overview/" description="What Ciel Social is, how the monorepo is organized, and where to read next." /%}
 
 {% quick-link title="Architecture" icon="presets" href="/docs/architecture/" description="How Ciel is layered, how api and worker modes differ, and how data flows." /%}
 
@@ -26,11 +26,11 @@ Contributors and operators who need to understand how the backend and clients fi
 
 ## Repository layout (monorepo)
 
-The PicShare monorepo typically contains:
+The Ciel Social monorepo typically contains:
 
 - **Ciel-backend** — API server (`APP_MODE=api`), SQS media worker (`APP_MODE=worker`), SQL migrations, Terraform for Scaleway, and this docs site.
-- **PicShare-ios** — SwiftUI app, repositories, use cases, no third-party packages by design.
-- **PicShare-android** — Kotlin, Hilt, Retrofit, Room, Compose.
+- **Ciel-ios** — SwiftUI app, repositories, use cases, no third-party packages by design.
+- **Ciel-android** — Kotlin, Hilt, Retrofit, Room, Compose.
 
 This site focuses on Ciel in depth and summarizes client architecture at a high level.
 

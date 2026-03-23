@@ -26,7 +26,7 @@ export function Logo({
     >
       <Logomark className="h-9 w-9 flex-none" aria-hidden />
       <span className="font-display text-lg font-semibold tracking-tight text-slate-700 dark:text-sky-100">
-        PicShare{' '}
+        Ciel{' '}
         <span className="font-medium text-slate-500 dark:text-slate-400">
           Docs
         </span>

@@ -2,14 +2,14 @@
 title: iOS app
 ---
 
-PicShare **iOS** is a native **SwiftUI** application structured in layers.
+Ciel Social **iOS** is a native **SwiftUI** application structured in layers.
 
 ---
 
 ## Layout (typical)
 
 ```text
-PicShare-ios/PicShare-ios/
+Ciel-ios/Ciel-ios/
 ├── App/           # AppContainer (DI), root views, tabs
 ├── Features/      # Per-feature Views + ViewModels
 ├── Domain/        # Entities and use cases

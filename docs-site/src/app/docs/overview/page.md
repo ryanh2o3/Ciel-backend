@@ -2,7 +2,7 @@
 title: Overview
 ---
 
-PicShare is a **photo-only** social product: posts and stories revolve around images, with likes, comments, follows, notifications, search, moderation, and an invite system.
+Ciel Social is a **photo-only** social product: posts and stories revolve around images, with likes, comments, follows, notifications, search, moderation, and an invite system.
 
 ---
 
