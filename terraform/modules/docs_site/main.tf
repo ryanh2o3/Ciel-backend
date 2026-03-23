@@ -90,6 +90,29 @@ resource "scaleway_object_bucket_policy" "docs" {
         ]
       },
       {
+        Sid    = "AllowProjectProvisioningAccess"
+        Effect = "Allow"
+        Principal = {
+          SCW = "project_id:${var.project_id}"
+        }
+        Action = [
+          "s3:GetBucketAcl",
+          "s3:ListBucket",
+          "s3:GetBucketWebsite",
+          "s3:PutBucketWebsite",
+          "s3:GetBucketPolicy",
+          "s3:PutBucketPolicy",
+          "s3:DeleteBucketPolicy",
+          "s3:GetObject",
+          "s3:PutObject",
+          "s3:DeleteObject",
+        ]
+        Resource = [
+          scaleway_object_bucket.docs.name,
+          "${scaleway_object_bucket.docs.name}/*",
+        ]
+      },
+      {
         Sid       = "AllowPublicReadDocs"
         Effect    = "Allow"
         Principal = "*"
