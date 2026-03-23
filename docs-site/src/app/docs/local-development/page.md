@@ -11,9 +11,16 @@ cargo build
 cargo check
 APP_MODE=api cargo run      # HTTP API
 APP_MODE=worker cargo run   # Media worker (needs queue + storage)
+APP_MODE=combined cargo run # API + worker in one process
 ```
 
 Use a `.env` file or export variables matching `.env.example` (database URL, Redis, S3, queue, PASETO keys, etc.).
+
+For serverless-style media execution (HTTP-triggered worker endpoint):
+
+```bash
+APP_MODE=serverless-worker cargo run
+```
 
 ---
 
@@ -40,6 +47,12 @@ Default demo credentials after seed (if unchanged): `demo@example.com` / `Change
 
 ```bash
 curl -s http://localhost:8080/health
+```
+
+Metrics endpoint:
+
+```bash
+curl -s http://localhost:8080/metrics
 ```
 
 ---

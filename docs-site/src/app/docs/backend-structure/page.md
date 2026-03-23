@@ -10,6 +10,11 @@ title: Backend structure
 
 Path parameters use Axum conventions (`:id` in the route string, `Path(Uuid)` in handlers).
 
+Versioning convention:
+
+- `/health` and `/metrics` live at root.
+- Product APIs are nested under `/v1/...`.
+
 ---
 
 ## Services
@@ -22,6 +27,12 @@ let svc = PostService::new(state.db.clone(), state.redis.clone());
 
 They return `anyhow::Result<T>` internally; handlers map failures to `AppError` and HTTP status codes.
 
+### Why this pattern
+
+- **No request-local mutable service state** keeps handlers easy to reason about and safe to clone.
+- **Explicit constructor dependencies** make service wiring visible (`Db`, cache, storage) instead of hidden globals.
+- **Failure mapping at the edge** preserves rich internal errors while providing stable API semantics.
+
 ---
 
 ## Auth
@@ -30,6 +41,8 @@ They return `anyhow::Result<T>` internally; handlers map failures to `AppError` 
 - **Argon2** for password hashing.
 - **`AuthUser` extractor** — validates `Authorization: Bearer`; 401 if missing or invalid.
 - **`AdminToken`** — separate secret for moderation/admin-style endpoints.
+
+Token keys are loaded from environment as 32-byte base64-decoded values; startup fails fast when malformed.
 
 ---
 
@@ -40,14 +53,43 @@ They return `anyhow::Result<T>` internally; handlers map failures to `AppError` 
 - Database constraint codes (`23505` unique, `23503` foreign key) for 409/404 semantics.
 - `anyhow` message checks for domain-level failures exposed as 400/403/404.
 
+This keeps SQL/infra details out of response payloads while still making errors actionable in logs.
+
 ---
 
-## Conventions (summary)
+## Query and data patterns
+
+### SQL conventions
 
 | Area | Convention |
 |------|------------|
-| SQL | `sqlx::query()` with `.bind()`, not `query!` |
-| Rows | `row.get("column_name")` |
+| SQL API | `sqlx::query()` with `.bind()`, not `query!` |
+| Row access | `row.get("column_name")` via `sqlx::Row` |
 | UUID PKs | Generated in Postgres (`uuid_generate_v4()`), not in Rust |
-| Visibility enums | String `as_db()` / `from_db()`, not sqlx enum derives |
-| Cache keys | `namespace:entity:id` |
+| Enums | Bound as strings via `as_db()` / parsed with `from_db()` |
+| Pagination | Cursor `(timestamp, uuid)` with `limit + 1` |
+
+### Cache conventions
+
+- Redis is used for acceleration, never as source of truth.
+- Keys follow `namespace:entity:id` (for paged feeds, cursor values are part of the key).
+- Cache failures are logged and tolerated; DB remains the fallback path.
+
+### Background processing conventions
+
+- Queue consumers are idempotent against DB status transitions.
+- Message deletion happens only after successful or permanently failed processing.
+- Transient failures are retried using queue semantics, not custom retry tables.
+
+---
+
+## AppState boundary
+
+`AppState` (in `main.rs`) is the composition root for runtime dependencies:
+
+- `Db`, `RedisCache`, `ObjectStorage`, `QueueClient`
+- auth/token settings and TTLs
+- upload constraints (`upload_max_bytes`, upload URL TTL)
+- trusted proxy CIDRs and notification channel capacity
+
+Centralizing this boundary keeps handler and middleware construction uniform across API and worker-adjacent paths.
