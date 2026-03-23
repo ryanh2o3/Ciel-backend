@@ -97,6 +97,10 @@ resource "scaleway_object_bucket_policy" "docs" {
         }
         Action = [
           "s3:GetBucketAcl",
+          "s3:GetBucketCors",
+          "s3:PutBucketCors",
+          "s3:DeleteBucketCors",
+          "s3:GetBucketLocation",
           "s3:ListBucket",
           "s3:GetBucketWebsite",
           "s3:PutBucketWebsite",

@@ -161,7 +161,7 @@ resource "scaleway_lb" "api" {
   count = var.enable_load_balancer ? 1 : 0
 
   name                    = "${var.app_name}-lb-${var.environment}"
-  ip_id                   = scaleway_lb_ip.api[0].id
+  ip_ids                  = [scaleway_lb_ip.api[0].id]
   type                    = var.lb_type
   zone                    = var.zone
   ssl_compatibility_level = "ssl_compatibility_level_modern"
