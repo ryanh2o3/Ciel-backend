@@ -61,34 +61,17 @@ resource "scaleway_iam_api_key" "docs_deploy" {
   description      = "Terraform-managed key for uploading PicShare docs to ${local.bucket_name}"
 }
 
-# Public read policy for static website + explicit deploy app permissions.
-# Bucket policies on Scaleway act as a restrictive boundary, so we allow both
-# CI deploy access and anonymous GET for published docs assets.
+# Public read policy for static website.
+# Keep bucket policy in 2012-10-17 mode to support project_id principals.
+# CI deploy app permissions are granted via IAM policy above.
 resource "scaleway_object_bucket_policy" "docs" {
   bucket = scaleway_object_bucket.docs.name
   region = var.region
 
   policy = jsonencode({
-    Version = "2023-04-17"
+    Version = "2012-10-17"
     Id      = "DocsSiteBucketPolicy"
     Statement = [
-      {
-        Sid    = "AllowDocsDeployAppAccess"
-        Effect = "Allow"
-        Principal = {
-          SCW = "application_id:${scaleway_iam_application.docs_deploy.id}"
-        }
-        Action = [
-          "s3:PutObject",
-          "s3:GetObject",
-          "s3:DeleteObject",
-          "s3:ListBucket",
-        ]
-        Resource = [
-          scaleway_object_bucket.docs.name,
-          "${scaleway_object_bucket.docs.name}/*",
-        ]
-      },
       {
         Sid    = "AllowProjectProvisioningAccess"
         Effect = "Allow"
