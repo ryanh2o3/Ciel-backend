@@ -61,6 +61,45 @@ resource "scaleway_iam_api_key" "docs_deploy" {
   description      = "Terraform-managed key for uploading PicShare docs to ${local.bucket_name}"
 }
 
+# Public read policy for static website + explicit deploy app permissions.
+# Bucket policies on Scaleway act as a restrictive boundary, so we allow both
+# CI deploy access and anonymous GET for published docs assets.
+resource "scaleway_object_bucket_policy" "docs" {
+  bucket = scaleway_object_bucket.docs.name
+  region = var.region
+
+  policy = jsonencode({
+    Version = "2023-04-17"
+    Id      = "DocsSiteBucketPolicy"
+    Statement = [
+      {
+        Sid    = "AllowDocsDeployAppAccess"
+        Effect = "Allow"
+        Principal = {
+          SCW = "application_id:${scaleway_iam_application.docs_deploy.id}"
+        }
+        Action = [
+          "s3:PutObject",
+          "s3:GetObject",
+          "s3:DeleteObject",
+          "s3:ListBucket",
+        ]
+        Resource = [
+          scaleway_object_bucket.docs.name,
+          "${scaleway_object_bucket.docs.name}/*",
+        ]
+      },
+      {
+        Sid       = "AllowPublicReadDocs"
+        Effect    = "Allow"
+        Principal = "*"
+        Action    = ["s3:GetObject"]
+        Resource  = ["${scaleway_object_bucket.docs.name}/*"]
+      },
+    ]
+  })
+}
+
 # -----------------------------------------------------------------------------
 # Edge Services — HTTPS + cache in front of the static bucket
 # Chain matches provider docs: backend → waf → route → cache → tls → dns → head
