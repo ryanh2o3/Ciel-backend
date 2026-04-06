@@ -32,9 +32,9 @@ resource "scaleway_mnq_sqs_queue" "dlq" {
   region     = var.region
   name       = local.dlq_name
 
-  sqs_endpoint       = scaleway_mnq_sqs.main.endpoint
-  access_key         = scaleway_mnq_sqs_credentials.main.access_key
-  secret_key         = scaleway_mnq_sqs_credentials.main.secret_key
+  sqs_endpoint = scaleway_mnq_sqs.main.endpoint
+  access_key   = scaleway_mnq_sqs_credentials.main.access_key
+  secret_key   = scaleway_mnq_sqs_credentials.main.secret_key
 
   message_max_age            = var.dlq_retention_seconds
   visibility_timeout_seconds = 30
@@ -52,9 +52,9 @@ resource "scaleway_mnq_sqs_queue" "main" {
   access_key   = scaleway_mnq_sqs_credentials.main.access_key
   secret_key   = scaleway_mnq_sqs_credentials.main.secret_key
 
-  message_max_age             = var.message_retention_seconds
-  visibility_timeout_seconds  = var.visibility_timeout
-  receive_wait_time_seconds   = var.receive_wait_time
+  message_max_age            = var.message_retention_seconds
+  visibility_timeout_seconds = var.visibility_timeout
+  receive_wait_time_seconds  = var.receive_wait_time
 
   dynamic "dead_letter_queue" {
     for_each = var.enable_dlq ? [1] : []

@@ -23,9 +23,9 @@ output "api_instance_ips" {
       [for ip in s.private_ips : ip.address if can(regex("^\\d+\\.\\d+\\.\\d+\\.\\d+$", ip.address))][0],
       null
     )]
-  ) : [for s in scaleway_instance_server.api : try(
-    [for ip in s.private_ips : ip.address if can(regex("^\\d+\\.\\d+\\.\\d+\\.\\d+$", ip.address))][0],
-    null
+    ) : [for s in scaleway_instance_server.api : try(
+      [for ip in s.private_ips : ip.address if can(regex("^\\d+\\.\\d+\\.\\d+\\.\\d+$", ip.address))][0],
+      null
   )]
 }
 

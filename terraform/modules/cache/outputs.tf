@@ -3,7 +3,7 @@ output "redis_host" {
   value = !var.enabled ? null : (
     var.use_managed_redis ? (
       length(scaleway_redis_cluster.main) > 0 ? one([for pn in scaleway_redis_cluster.main[0].private_network : pn.endpoint_id]) : null
-    ) : (
+      ) : (
       length(scaleway_instance_server.redis) > 0 ? try(scaleway_instance_server.redis[0].private_ips[0].address, null) : null
     )
   )
@@ -11,7 +11,7 @@ output "redis_host" {
 
 output "redis_port" {
   description = "Redis port"
-  value = var.enabled ? 6379 : null
+  value       = var.enabled ? 6379 : null
 }
 
 output "redis_url" {
@@ -20,12 +20,12 @@ output "redis_url" {
     var.use_managed_redis ? (
       length(scaleway_redis_cluster.main) > 0 ? (
         var.managed_redis_tls_enabled ?
-          "rediss://:${var.redis_password}@${one([for pn in scaleway_redis_cluster.main[0].private_network : pn.endpoint_id])}:6379" :
-          "redis://:${var.redis_password}@${one([for pn in scaleway_redis_cluster.main[0].private_network : pn.endpoint_id])}:6379"
+        "rediss://:${var.redis_password}@${one([for pn in scaleway_redis_cluster.main[0].private_network : pn.endpoint_id])}:6379" :
+        "redis://:${var.redis_password}@${one([for pn in scaleway_redis_cluster.main[0].private_network : pn.endpoint_id])}:6379"
       ) : null
-    ) : (
+      ) : (
       length(scaleway_instance_server.redis) > 0 ?
-        "redis://:${var.redis_password}@${try(scaleway_instance_server.redis[0].private_ips[0].address, "")}:6379" : null
+      "redis://:${var.redis_password}@${try(scaleway_instance_server.redis[0].private_ips[0].address, "")}:6379" : null
     )
   )
   sensitive = true
@@ -47,10 +47,10 @@ output "managed_cluster_id" {
 
 output "is_managed" {
   description = "Whether using managed Redis"
-  value = var.enabled ? var.use_managed_redis : false
+  value       = var.enabled ? var.use_managed_redis : false
 }
 
 output "redis_use_tls" {
   description = "Whether Redis connections should use TLS"
-  value = var.enabled ? (var.use_managed_redis ? var.managed_redis_tls_enabled : false) : false
+  value       = var.enabled ? (var.use_managed_redis ? var.managed_redis_tls_enabled : false) : false
 }

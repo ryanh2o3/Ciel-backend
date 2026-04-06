@@ -22,7 +22,7 @@ output "docs_https_url" {
   description = "Public documentation URL (HTTPS when Edge is enabled)"
   value = var.docs_fqdn != "" ? (
     local.edge_count > 0 ? "https://${var.docs_fqdn}" : "http://${var.docs_fqdn}"
-    ) : scaleway_object_bucket_website_configuration.docs.website_endpoint
+  ) : scaleway_object_bucket_website_configuration.docs.website_endpoint
 }
 
 output "website_endpoint" {

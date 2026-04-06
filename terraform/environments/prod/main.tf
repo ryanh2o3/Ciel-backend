@@ -35,16 +35,16 @@ locals {
 module "networking" {
   source = "../../modules/networking"
 
-  project_id           = var.project_id
-  region               = var.region
-  zone                 = var.zone
-  environment          = local.environment
-  app_name             = local.app_name
-  tags                 = local.tags
+  project_id  = var.project_id
+  region      = var.region
+  zone        = var.zone
+  environment = local.environment
+  app_name    = local.app_name
+  tags        = local.tags
 
   # Production-specific settings
   enable_load_balancer  = true
-  enable_bastion        = false  # No bastion in production for security
+  enable_bastion        = false # No bastion in production for security
   enable_public_gateway = true
   private_network_cidr  = "10.0.3.0/24"
   lb_type               = "LB-GP-S"
@@ -55,12 +55,12 @@ module "networking" {
 module "database" {
   source = "../../modules/database"
 
-  project_id         = var.project_id
-  region             = var.region
-  zone               = var.zone
-  environment        = local.environment
-  app_name           = local.app_name
-  tags               = local.tags
+  project_id  = var.project_id
+  region      = var.region
+  zone        = var.zone
+  environment = local.environment
+  app_name    = local.app_name
+  tags        = local.tags
 
   # Production-specific settings - HA database
   db_node_type       = "DB-PRO2-XXS"
@@ -69,8 +69,8 @@ module "database" {
   read_replica_count = 1
 
   # Database credentials
-  db_admin_password  = var.db_admin_password
-  db_user_password   = var.db_user_password
+  db_admin_password = var.db_admin_password
+  db_user_password  = var.db_user_password
 
   # Network
   private_network_id = module.networking.private_network_id
@@ -80,12 +80,12 @@ module "database" {
 module "cache" {
   source = "../../modules/cache"
 
-  project_id              = var.project_id
-  region                  = var.region
-  zone                    = var.zone
-  environment             = local.environment
-  app_name                = local.app_name
-  tags                    = local.tags
+  project_id  = var.project_id
+  region      = var.region
+  zone        = var.zone
+  environment = local.environment
+  app_name    = local.app_name
+  tags        = local.tags
 
   # Production-specific settings - managed Redis for reliability
   use_managed_redis       = true
@@ -93,23 +93,23 @@ module "cache" {
   redis_password          = var.redis_password
 
   # Network dependencies
-  private_network_id      = module.networking.private_network_id
-  security_group_id       = module.networking.redis_security_group_id
+  private_network_id = module.networking.private_network_id
+  security_group_id  = module.networking.redis_security_group_id
 }
 
 # Storage Module
 module "storage" {
   source = "../../modules/storage"
 
-  project_id               = var.project_id
-  region                   = var.region
-  environment              = local.environment
-  app_name                 = local.app_name
-  tags                     = local.tags
+  project_id  = var.project_id
+  region      = var.region
+  environment = local.environment
+  app_name    = local.app_name
+  tags        = local.tags
 
   # Production-specific settings
-  cors_allowed_origins     = ["https://ciel-social.eu", "https://www.ciel-social.eu"]
-  enable_cdn               = true
+  cors_allowed_origins      = ["https://ciel-social.eu", "https://www.ciel-social.eu"]
+  enable_cdn                = true
   enable_glacier_transition = true
 }
 
@@ -117,63 +117,63 @@ module "storage" {
 module "messaging" {
   source = "../../modules/messaging"
 
-  project_id                = var.project_id
-  region                    = var.region
-  zone                      = var.zone
-  environment               = local.environment
-  app_name                  = local.app_name
-  tags                      = local.tags
+  project_id  = var.project_id
+  region      = var.region
+  zone        = var.zone
+  environment = local.environment
+  app_name    = local.app_name
+  tags        = local.tags
 
   # Production-specific settings
   enable_dlq                = true
-  message_retention_seconds = 345600  # 4 days
+  message_retention_seconds = 345600 # 4 days
 }
 
 # Secrets Module
 module "secrets" {
   source = "../../modules/secrets"
 
-  project_id         = var.project_id
-  region             = var.region
-  zone               = var.zone
-  environment        = local.environment
-  app_name           = local.app_name
-  tags               = local.tags
+  project_id  = var.project_id
+  region      = var.region
+  zone        = var.zone
+  environment = local.environment
+  app_name    = local.app_name
+  tags        = local.tags
 
   # Secrets from variables
-  paseto_access_key  = var.paseto_access_key
-  paseto_refresh_key = var.paseto_refresh_key
-  admin_token        = var.admin_token
-  generate_db_password   = false
+  paseto_access_key       = var.paseto_access_key
+  paseto_refresh_key      = var.paseto_refresh_key
+  admin_token             = var.admin_token
+  generate_db_password    = false
   generate_redis_password = false
-  db_password        = var.db_user_password
-  redis_password     = var.redis_password
-  s3_access_key      = module.storage.s3_access_key
-  s3_secret_key      = module.storage.s3_secret_key
-  sqs_access_key     = module.messaging.sqs_access_key
-  sqs_secret_key     = module.messaging.sqs_secret_key
+  db_password             = var.db_user_password
+  redis_password          = var.redis_password
+  s3_access_key           = module.storage.s3_access_key
+  s3_secret_key           = module.storage.s3_secret_key
+  sqs_access_key          = module.messaging.sqs_access_key
+  sqs_secret_key          = module.messaging.sqs_secret_key
 }
 
 # Compute Module
 module "compute" {
   source = "../../modules/compute"
 
-  project_id               = var.project_id
-  region                   = var.region
-  zone                     = var.zone
-  environment              = local.environment
-  app_name                 = local.app_name
-  tags                     = local.tags
+  project_id  = var.project_id
+  region      = var.region
+  zone        = var.zone
+  environment = local.environment
+  app_name    = local.app_name
+  tags        = local.tags
 
   # Production-specific settings - multiple instances for HA
-  api_instance_count       = 2
-  api_instance_type        = "GP1-M"
-  worker_instance_count    = 2
-  worker_instance_type     = "GP1-S"
+  api_instance_count    = 2
+  api_instance_type     = "GP1-M"
+  worker_instance_count = 2
+  worker_instance_type  = "GP1-S"
 
   # Use production container image with version tag
-  container_image          = "rg.fr-par.scw.cloud/ciel-social/ciel-backend"
-  container_image_tag      = var.container_image_tag
+  container_image     = "rg.fr-par.scw.cloud/ciel-social/ciel-backend"
+  container_image_tag = var.container_image_tag
 
   # Network dependencies
   private_network_id       = module.networking.private_network_id
@@ -187,40 +187,40 @@ module "compute" {
   db_user                = module.database.database_user
   db_password            = var.db_user_password
   migration_database_url = module.database.migration_database_url
-  redis_host         = module.cache.redis_host
-  redis_port         = module.cache.redis_port
-  redis_use_tls      = module.cache.redis_use_tls
-  redis_password     = var.redis_password
-  s3_endpoint        = module.storage.s3_endpoint
-  s3_region          = var.region
-  s3_bucket          = module.storage.bucket_name
-  s3_public_endpoint = module.storage.s3_public_endpoint
-  s3_access_key      = module.storage.s3_access_key
-  s3_secret_key      = module.storage.s3_secret_key
-  queue_endpoint     = module.messaging.queue_endpoint
-  queue_region       = var.region
-  queue_name         = module.messaging.queue_name
-  sqs_access_key     = module.messaging.sqs_access_key
-  sqs_secret_key     = module.messaging.sqs_secret_key
-  paseto_access_key  = var.paseto_access_key
-  paseto_refresh_key = var.paseto_refresh_key
-  admin_token        = var.admin_token
-  rust_log           = "info"
+  redis_host             = module.cache.redis_host
+  redis_port             = module.cache.redis_port
+  redis_use_tls          = module.cache.redis_use_tls
+  redis_password         = var.redis_password
+  s3_endpoint            = module.storage.s3_endpoint
+  s3_region              = var.region
+  s3_bucket              = module.storage.bucket_name
+  s3_public_endpoint     = module.storage.s3_public_endpoint
+  s3_access_key          = module.storage.s3_access_key
+  s3_secret_key          = module.storage.s3_secret_key
+  queue_endpoint         = module.messaging.queue_endpoint
+  queue_region           = var.region
+  queue_name             = module.messaging.queue_name
+  sqs_access_key         = module.messaging.sqs_access_key
+  sqs_secret_key         = module.messaging.sqs_secret_key
+  paseto_access_key      = var.paseto_access_key
+  paseto_refresh_key     = var.paseto_refresh_key
+  admin_token            = var.admin_token
+  rust_log               = "info"
 }
 
 # Observability Module
 module "observability" {
   source = "../../modules/observability"
 
-  project_id    = var.project_id
-  region        = var.region
-  zone          = var.zone
-  environment   = local.environment
-  app_name      = local.app_name
-  tags          = local.tags
+  project_id  = var.project_id
+  region      = var.region
+  zone        = var.zone
+  environment = local.environment
+  app_name    = local.app_name
+  tags        = local.tags
 
   # Production-specific settings
-  enable_alerts       = true
+  enable_alerts        = true
   alert_contact_emails = var.alert_contact_emails
 }
 
@@ -233,7 +233,7 @@ module "dns" {
   domain_name      = var.domain_name
   api_subdomain    = "api"
   cdn_subdomain    = "media"
-  load_balancer_ip = module.networking.load_balancer_ip
+  public_ipv4      = module.networking.load_balancer_ip
   load_balancer_id = module.networking.load_balancer_id
   cdn_endpoint     = module.storage.cdn_endpoint
 
@@ -262,7 +262,7 @@ resource "scaleway_lb_backend" "api" {
   forward_port     = 8443
   server_ips       = module.compute.api_instance_ips
 
-  ignore_ssl_server_verify = true  # Backend uses self-signed TLS cert
+  ignore_ssl_server_verify = true # Backend uses self-signed TLS cert
 
   health_check_tcp {}
 
@@ -319,17 +319,17 @@ resource "scaleway_lb_frontend" "https" {
 module "api_security" {
   source = "../../modules/api_security"
 
-  project_id             = var.project_id
-  region                 = var.region
-  zone                   = var.zone
-  environment            = local.environment
-  app_name               = local.app_name
-  tags                   = local.tags
-  private_network_id     = module.networking.private_network_id
-  ssl_certificate_ids    = var.enable_dns ? module.dns[0].ssl_certificate_ids : []
+  project_id          = var.project_id
+  region              = var.region
+  zone                = var.zone
+  environment         = local.environment
+  app_name            = local.app_name
+  tags                = local.tags
+  private_network_id  = module.networking.private_network_id
+  ssl_certificate_ids = var.enable_dns ? module.dns[0].ssl_certificate_ids : []
 
   # API Gateway configuration
-  enable_api_gateway     = false  # Using main LB, not a separate gateway
+  enable_api_gateway = false # Using main LB, not a separate gateway
 
   # Security configuration
   enable_ip_restrictions = var.enable_ip_restrictions

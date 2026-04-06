@@ -1,8 +1,8 @@
 # Generate random passwords if requested
 resource "random_password" "db_password" {
-  count   = var.generate_db_password ? 1 : 0
-  length  = 32
-  special = true
+  count            = var.generate_db_password ? 1 : 0
+  length           = 32
+  special          = true
   override_special = "!@#$%^&*"
 }
 

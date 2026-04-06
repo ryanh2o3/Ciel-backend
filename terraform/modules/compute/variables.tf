@@ -53,6 +53,12 @@ variable "embedded_redis_maxmemory_mb" {
   default     = 512
 }
 
+variable "public_api_fqdn" {
+  description = "Public FQDN for the combined instance HTTPS endpoint (used by Caddy). Leave empty to disable direct HTTPS config."
+  type        = string
+  default     = ""
+}
+
 # ---- Multi-Instance Mode ----
 
 variable "api_instance_count" {

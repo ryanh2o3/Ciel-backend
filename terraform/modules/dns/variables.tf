@@ -15,8 +15,8 @@ variable "cdn_subdomain" {
   default     = "media"
 }
 
-variable "load_balancer_ip" {
-  description = "Load balancer public IP address"
+variable "public_ipv4" {
+  description = "Public IPv4 address for A records (LB IP or instance IP)"
   type        = string
 }
 

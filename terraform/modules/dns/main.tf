@@ -8,7 +8,7 @@ resource "scaleway_domain_record" "api" {
   dns_zone = var.domain_name
   name     = var.api_subdomain
   type     = "A"
-  data     = var.load_balancer_ip
+  data     = var.public_ipv4
   ttl      = 300
   priority = null
 }
@@ -45,7 +45,7 @@ resource "scaleway_domain_record" "www" {
   dns_zone = var.domain_name
   name     = "www"
   type     = "A"
-  data     = var.load_balancer_ip
+  data     = var.public_ipv4
   ttl      = 300
   priority = null
 }
@@ -57,7 +57,7 @@ resource "scaleway_domain_record" "root" {
   dns_zone = var.domain_name
   name     = "@"
   type     = "A"
-  data     = var.load_balancer_ip
+  data     = var.public_ipv4
   ttl      = 300
   priority = null
 }

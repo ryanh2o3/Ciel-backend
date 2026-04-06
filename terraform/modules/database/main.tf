@@ -3,12 +3,12 @@ resource "scaleway_rdb_instance" "main" {
   name   = "${var.app_name}-db-${var.environment}"
   region = var.region
 
-  node_type          = var.db_node_type
-  engine             = var.db_engine
-  is_ha_cluster      = var.enable_ha
-  disable_backup     = false
-  volume_type        = var.volume_type
-  volume_size_in_gb  = var.volume_size_in_gb
+  node_type         = var.db_node_type
+  engine            = var.db_engine
+  is_ha_cluster     = var.enable_ha
+  disable_backup    = false
+  volume_type       = var.volume_type
+  volume_size_in_gb = var.volume_size_in_gb
 
   backup_schedule_frequency = var.backup_schedule_frequency
   backup_schedule_retention = var.backup_schedule_retention

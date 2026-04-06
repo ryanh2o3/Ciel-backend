@@ -38,18 +38,18 @@ locals {
 module "networking" {
   source = "../../modules/networking"
 
-  project_id           = var.project_id
-  region               = var.region
-  zone                 = var.zone
-  environment          = local.environment
-  app_name             = local.app_name
-  tags                 = local.tags
+  project_id  = var.project_id
+  region      = var.region
+  zone        = var.zone
+  environment = local.environment
+  app_name    = local.app_name
+  tags        = local.tags
 
   # Dev-specific settings
-  enable_load_balancer  = true
-  enable_bastion        = true   # Allow SSH access for debugging
-  enable_public_gateway = true
-  enable_public_https   = false  # SSL terminated at LB, not on instance
+  enable_load_balancer  = false
+  enable_bastion        = false
+  enable_public_gateway = false
+  enable_public_https   = true # Direct HTTPS on instance (Caddy)
   private_network_cidr  = "10.0.1.0/24"
   ssh_allowed_cidrs     = var.ssh_allowed_cidrs
 }
@@ -58,12 +58,12 @@ module "networking" {
 module "database" {
   source = "../../modules/database"
 
-  project_id         = var.project_id
-  region             = var.region
-  zone               = var.zone
-  environment        = local.environment
-  app_name           = local.app_name
-  tags               = local.tags
+  project_id  = var.project_id
+  region      = var.region
+  zone        = var.zone
+  environment = local.environment
+  app_name    = local.app_name
+  tags        = local.tags
 
   # Dev-specific settings - smallest database
   db_node_type       = "DB-DEV-S"
@@ -72,8 +72,8 @@ module "database" {
   read_replica_count = 0
 
   # Database credentials
-  db_admin_password  = var.db_admin_password
-  db_user_password   = var.db_user_password
+  db_admin_password = var.db_admin_password
+  db_user_password  = var.db_user_password
 
   # Network
   private_network_id = module.networking.private_network_id
@@ -83,17 +83,17 @@ module "database" {
 module "cache" {
   source = "../../modules/cache"
 
-  enabled            = false  # Redis is embedded in the combined instance
+  enabled = false # Redis is embedded in the combined instance
 
-  project_id         = var.project_id
-  region             = var.region
-  zone               = var.zone
-  environment        = local.environment
-  app_name           = local.app_name
-  tags               = local.tags
+  project_id  = var.project_id
+  region      = var.region
+  zone        = var.zone
+  environment = local.environment
+  app_name    = local.app_name
+  tags        = local.tags
 
-  use_managed_redis   = false
-  redis_password      = var.redis_password
+  use_managed_redis = false
+  redis_password    = var.redis_password
 
   # Network dependencies (not used when disabled, but required by module)
   private_network_id = module.networking.private_network_id
@@ -104,15 +104,15 @@ module "cache" {
 module "storage" {
   source = "../../modules/storage"
 
-  project_id           = var.project_id
-  region               = var.region
-  environment          = local.environment
-  app_name             = local.app_name
-  tags                 = local.tags
+  project_id  = var.project_id
+  region      = var.region
+  environment = local.environment
+  app_name    = local.app_name
+  tags        = local.tags
 
   # Dev-specific settings
-  cors_allowed_origins = ["https://ciel-social.eu", "https://api.ciel-social.eu"]
-  enable_cdn           = false  # No CDN for dev
+  cors_allowed_origins      = ["https://ciel-social.eu", "https://api.ciel-social.eu"]
+  enable_cdn                = false # No CDN for dev
   enable_glacier_transition = false
 }
 
@@ -120,64 +120,65 @@ module "storage" {
 module "messaging" {
   source = "../../modules/messaging"
 
-  project_id                = var.project_id
-  region                    = var.region
-  environment               = local.environment
-  app_name                  = local.app_name
-  tags                      = local.tags
+  project_id  = var.project_id
+  region      = var.region
+  environment = local.environment
+  app_name    = local.app_name
+  tags        = local.tags
 
   # Dev-specific settings
   enable_dlq                = true
-  message_retention_seconds = 1209600  # 14 days for dev
+  message_retention_seconds = 1209600 # 14 days for dev
 }
 
 # Secrets Module
 module "secrets" {
   source = "../../modules/secrets"
 
-  project_id         = var.project_id
-  region             = var.region
-  zone               = var.zone
-  environment        = local.environment
-  app_name           = local.app_name
-  tags               = local.tags
+  project_id  = var.project_id
+  region      = var.region
+  zone        = var.zone
+  environment = local.environment
+  app_name    = local.app_name
+  tags        = local.tags
 
   # Secrets from variables
-  paseto_access_key  = var.paseto_access_key
-  paseto_refresh_key = var.paseto_refresh_key
-  admin_token        = var.admin_token
-  generate_db_password   = false
+  paseto_access_key       = var.paseto_access_key
+  paseto_refresh_key      = var.paseto_refresh_key
+  admin_token             = var.admin_token
+  generate_db_password    = false
   generate_redis_password = false
-  db_password        = var.db_user_password
-  redis_password     = var.redis_password
-  s3_access_key      = module.storage.s3_access_key
-  s3_secret_key      = module.storage.s3_secret_key
-  sqs_access_key     = module.messaging.sqs_access_key
-  sqs_secret_key     = module.messaging.sqs_secret_key
+  db_password             = var.db_user_password
+  redis_password          = var.redis_password
+  s3_access_key           = module.storage.s3_access_key
+  s3_secret_key           = module.storage.s3_secret_key
+  sqs_access_key          = module.messaging.sqs_access_key
+  sqs_secret_key          = module.messaging.sqs_secret_key
 }
 
 # Compute Module — combined mode + serverless worker
 module "compute" {
   source = "../../modules/compute"
 
-  project_id               = var.project_id
-  region                   = var.region
-  zone                     = var.zone
-  environment              = local.environment
-  app_name                 = local.app_name
-  tags                     = local.tags
+  project_id  = var.project_id
+  region      = var.region
+  zone        = var.zone
+  environment = local.environment
+  app_name    = local.app_name
+  tags        = local.tags
 
   # Combined mode: API + Redis on one DEV1-M instance
-  enable_combined_mode     = true
-  combined_instance_type   = "DEV1-M"
-  embedded_redis_maxmemory_mb = 512
+  enable_combined_mode        = true
+  combined_instance_type      = "DEV1-S"
+  embedded_redis_maxmemory_mb = 256
+  public_api_fqdn             = "api.${var.domain_name}"
 
   # No separate API/worker instances
-  api_instance_count       = 0
-  worker_instance_count    = 0
+  api_instance_count    = 0
+  worker_instance_count = 0
 
   # Serverless Container for media processing
-  enable_serverless_worker    = false  # Enable after pushing container image
+  enable_serverless_worker    = false # Enable after pushing container image
   serverless_worker_cpu       = 1000  # 1 vCPU
   serverless_worker_memory    = 1024  # 1024 MB (minimum for 1 vCPU)
   serverless_worker_min_scale = 0     # Scale to zero
@@ -187,8 +188,8 @@ module "compute" {
   serverless_s3_secret_key    = module.storage.s3_secret_key
 
   # Container image
-  container_image          = "rg.fr-par.scw.cloud/ciel-social/ciel-backend"
-  container_image_tag      = var.container_image_tag
+  container_image     = "rg.fr-par.scw.cloud/ciel-social/ciel-backend"
+  container_image_tag = var.container_image_tag
 
   # Network dependencies
   private_network_id       = module.networking.private_network_id
@@ -202,37 +203,37 @@ module "compute" {
   db_user                = module.database.database_user
   db_password            = var.db_user_password
   migration_database_url = module.database.migration_database_url
-  redis_password     = var.redis_password
-  s3_endpoint        = module.storage.s3_endpoint
-  s3_region          = var.region
-  s3_bucket          = module.storage.bucket_name
-  s3_public_endpoint = module.storage.s3_public_endpoint
-  s3_access_key      = module.storage.s3_access_key
-  s3_secret_key      = module.storage.s3_secret_key
-  queue_endpoint     = module.messaging.queue_endpoint
-  queue_region       = var.region
-  queue_name         = module.messaging.queue_name
-  sqs_access_key     = module.messaging.sqs_access_key
-  sqs_secret_key     = module.messaging.sqs_secret_key
-  paseto_access_key  = var.paseto_access_key
-  paseto_refresh_key = var.paseto_refresh_key
-  admin_token        = var.admin_token
-  rust_log           = "debug,tower_http=debug"
+  redis_password         = var.redis_password
+  s3_endpoint            = module.storage.s3_endpoint
+  s3_region              = var.region
+  s3_bucket              = module.storage.bucket_name
+  s3_public_endpoint     = module.storage.s3_public_endpoint
+  s3_access_key          = module.storage.s3_access_key
+  s3_secret_key          = module.storage.s3_secret_key
+  queue_endpoint         = module.messaging.queue_endpoint
+  queue_region           = var.region
+  queue_name             = module.messaging.queue_name
+  sqs_access_key         = module.messaging.sqs_access_key
+  sqs_secret_key         = module.messaging.sqs_secret_key
+  paseto_access_key      = var.paseto_access_key
+  paseto_refresh_key     = var.paseto_refresh_key
+  admin_token            = var.admin_token
+  rust_log               = "debug,tower_http=debug"
 }
 
 # Observability Module
 module "observability" {
   source = "../../modules/observability"
 
-  project_id    = var.project_id
-  region        = var.region
-  zone          = var.zone
-  environment   = local.environment
-  app_name      = local.app_name
-  tags          = local.tags
+  project_id  = var.project_id
+  region      = var.region
+  zone        = var.zone
+  environment = local.environment
+  app_name    = local.app_name
+  tags        = local.tags
 
   # Dev-specific settings
-  enable_alerts = false  # No alerts for dev
+  enable_alerts = false # No alerts for dev
 }
 
 # Static docs site (Markdown → Next export → S3 sync; see docs-site/ and .github/workflows/docs.yml)
@@ -259,16 +260,16 @@ module "dns" {
   domain_name      = var.domain_name
   api_subdomain    = "api"
   cdn_subdomain    = "dev-media"
-  load_balancer_ip = module.networking.load_balancer_ip
-  load_balancer_id = module.networking.load_balancer_id
+  public_ipv4      = module.compute.api_instance_public_ips[0]
+  load_balancer_id = null
   cdn_endpoint     = module.storage.cdn_endpoint
 
   # Match prod DNS settings
   enable_api_dns  = true
-  enable_cdn_dns  = false  # No CDN in dev — no endpoint to CNAME to
+  enable_cdn_dns  = false # No CDN in dev — no endpoint to CNAME to
   enable_www_dns  = true
   enable_root_dns = true
-  enable_ssl      = true
+  enable_ssl      = false
 
   enable_docs_dns   = var.enable_docs_hosting
   docs_cname_target = length(module.docs_site) > 0 ? module.docs_site[0].dns_cname_target : ""
@@ -282,7 +283,7 @@ module "dns" {
 # ============================================================
 
 resource "scaleway_lb_backend" "api" {
-  count = var.enable_dns ? 1 : 0
+  count = var.enable_dns && module.networking.load_balancer_id != null ? 1 : 0
 
   lb_id            = module.networking.load_balancer_id
   name             = "ciel-backend-dev"
@@ -291,7 +292,7 @@ resource "scaleway_lb_backend" "api" {
   forward_port     = 8443
   server_ips       = module.compute.api_instance_ips
 
-  ignore_ssl_server_verify = true  # Backend uses self-signed TLS cert
+  ignore_ssl_server_verify = true # Backend uses self-signed TLS cert
 
   health_check_tcp {}
 
@@ -304,7 +305,7 @@ resource "scaleway_lb_backend" "api" {
 }
 
 resource "scaleway_lb_frontend" "http" {
-  count = var.enable_dns ? 1 : 0
+  count = var.enable_dns && module.networking.load_balancer_id != null ? 1 : 0
 
   lb_id        = module.networking.load_balancer_id
   backend_id   = scaleway_lb_backend.api[0].id
@@ -313,7 +314,7 @@ resource "scaleway_lb_frontend" "http" {
 }
 
 resource "scaleway_lb_acl" "http_to_https_redirect" {
-  count = var.enable_dns ? 1 : 0
+  count = var.enable_dns && module.networking.load_balancer_id != null ? 1 : 0
 
   frontend_id = scaleway_lb_frontend.http[0].id
   name        = "ciel-http-redirect-dev"
@@ -335,7 +336,7 @@ resource "scaleway_lb_acl" "http_to_https_redirect" {
 }
 
 resource "scaleway_lb_frontend" "https" {
-  count = var.enable_dns ? 1 : 0
+  count = var.enable_dns && module.networking.load_balancer_id != null ? 1 : 0
 
   lb_id           = module.networking.load_balancer_id
   backend_id      = scaleway_lb_backend.api[0].id

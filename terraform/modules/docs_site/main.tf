@@ -47,7 +47,7 @@ resource "scaleway_iam_policy" "docs_deploy" {
   application_id = scaleway_iam_application.docs_deploy.id
 
   rule {
-    project_ids          = [var.project_id]
+    project_ids = [var.project_id]
     permission_set_names = [
       "ObjectStorageObjectsRead",
       "ObjectStorageObjectsWrite",
@@ -58,7 +58,7 @@ resource "scaleway_iam_policy" "docs_deploy" {
 
 resource "scaleway_iam_api_key" "docs_deploy" {
   application_id = scaleway_iam_application.docs_deploy.id
-  description      = "Terraform-managed key for uploading PicShare docs to ${local.bucket_name}"
+  description    = "Terraform-managed key for uploading PicShare docs to ${local.bucket_name}"
 }
 
 # Public read policy for static website.
