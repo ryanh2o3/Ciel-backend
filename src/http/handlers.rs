@@ -557,6 +557,7 @@ pub async fn list_user_posts(
         state.s3_public_endpoint.clone(),
     );
     media_svc.populate_post_avatar_urls(&mut posts).await;
+    media_svc.populate_post_primary_media(&mut posts).await;
 
     Ok(Json(ListResponse {
         items: posts,
@@ -1960,6 +1961,7 @@ pub async fn create_story(
     );
     let mut story = story;
     media_svc.populate_story_avatar_urls(std::slice::from_mut(&mut story)).await;
+    media_svc.populate_story_media(std::slice::from_mut(&mut story)).await;
 
     Ok(Json(story))
 }
@@ -1993,6 +1995,7 @@ pub async fn get_user_stories(
         state.db.clone(), state.cache.clone(), state.storage.clone(), state.queue.clone(), state.s3_public_endpoint.clone(),
     );
     media_svc.populate_story_avatar_urls(&mut stories).await;
+    media_svc.populate_story_media(&mut stories).await;
 
     Ok(Json(ListResponse {
         items: stories,
@@ -2018,6 +2021,7 @@ pub async fn get_story(
                 state.db.clone(), state.cache.clone(), state.storage.clone(), state.queue.clone(), state.s3_public_endpoint.clone(),
             );
             media_svc.populate_story_avatar_urls(std::slice::from_mut(&mut story)).await;
+            media_svc.populate_story_media(std::slice::from_mut(&mut story)).await;
             Ok(Json(story))
         }
         None => Err(AppError::not_found("story not found")),
@@ -2235,6 +2239,7 @@ pub async fn get_stories_feed(
         state.db.clone(), state.cache.clone(), state.storage.clone(), state.queue.clone(), state.s3_public_endpoint.clone(),
     );
     media_svc.populate_story_avatar_urls(&mut stories).await;
+    media_svc.populate_story_media(&mut stories).await;
 
     Ok(Json(ListResponse {
         items: stories,

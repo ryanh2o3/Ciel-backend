@@ -446,6 +446,27 @@ impl MediaService {
         }
     }
 
+    /// Populate primary_media for posts using the first media_id.
+    ///
+    /// This is intended for list/grid UIs (e.g. profile grid) to avoid N+1 media
+    /// fetches from clients.
+    pub async fn populate_post_primary_media(&self, posts: &mut [crate::domain::post::Post]) {
+        let futures: Vec<_> = posts
+            .iter()
+            .enumerate()
+            .filter_map(|(i, p)| p.media_ids.first().copied().map(|media_id| (i, media_id)))
+            .map(|(i, media_id)| async move {
+                let media = self.get_media(media_id).await.ok().flatten();
+                (i, media)
+            })
+            .collect();
+
+        let results = futures::future::join_all(futures).await;
+        for (i, media) in results {
+            posts[i].primary_media = media;
+        }
+    }
+
     /// Populate user_avatar_url for stories from user_avatar_key
     pub async fn populate_story_avatar_urls(&self, stories: &mut [crate::domain::story::Story]) {
         let futures: Vec<_> = stories
@@ -464,6 +485,24 @@ impl MediaService {
         let results = futures::future::join_all(futures).await;
         for (i, url) in results {
             stories[i].user_avatar_url = url;
+        }
+    }
+
+    /// Populate media for stories from media_id.
+    pub async fn populate_story_media(&self, stories: &mut [crate::domain::story::Story]) {
+        let futures: Vec<_> = stories
+            .iter()
+            .enumerate()
+            .map(|(i, s)| (i, s.media_id))
+            .map(|(i, media_id)| async move {
+                let media = self.get_media(media_id).await.ok().flatten();
+                (i, media)
+            })
+            .collect();
+
+        let results = futures::future::join_all(futures).await;
+        for (i, media) in results {
+            stories[i].media = media;
         }
     }
 

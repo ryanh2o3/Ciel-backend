@@ -713,6 +713,7 @@ fn row_to_story(row: &PgRow) -> StoryResult<Story> {
         user_avatar_key: row.get("user_avatar_key"),
         user_avatar_url: None,
         media_id: row.get("media_id"),
+        media: None,
         caption: row.get("caption"),
         created_at: row.get("created_at"),
         expires_at: row.get("expires_at"),

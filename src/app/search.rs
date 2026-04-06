@@ -134,6 +134,7 @@ impl SearchService {
                 owner_handle: Some(row.get("owner_handle")),
                 owner_display_name: Some(row.get("owner_display_name")),
                 media_ids: row.get("media_ids"),
+                primary_media: None,
                 caption: row.get("caption"),
                 visibility,
                 created_at: row.get("created_at"),

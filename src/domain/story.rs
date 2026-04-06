@@ -13,6 +13,8 @@ pub struct Story {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub user_avatar_url: Option<String>,
     pub media_id: Uuid,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub media: Option<crate::domain::media::Media>,
     pub caption: Option<String>,
     #[serde(with = "time::serde::rfc3339")]
     pub created_at: OffsetDateTime,

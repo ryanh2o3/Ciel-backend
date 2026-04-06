@@ -9,6 +9,8 @@ pub struct Post {
     pub owner_handle: Option<String>,
     pub owner_display_name: Option<String>,
     pub media_ids: Vec<Uuid>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub primary_media: Option<crate::domain::media::Media>,
     pub caption: Option<String>,
     #[serde(with = "time::serde::rfc3339")]
     pub created_at: OffsetDateTime,
