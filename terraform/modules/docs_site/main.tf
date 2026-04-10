@@ -115,6 +115,9 @@ resource "scaleway_edge_services_backend_stage" "docs" {
   s3_backend_config {
     bucket_name   = scaleway_object_bucket.docs.name
     bucket_region = var.region
+    # Use website endpoint semantics (index.html, error doc). Without this, Edge
+    # hits the S3 API and GET / is treated as ListBucket → public AccessDenied.
+    is_website = true
   }
 }
 
