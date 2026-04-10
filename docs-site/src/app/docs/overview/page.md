@@ -30,7 +30,9 @@ Both apps authenticate with **Bearer** access tokens (PASETO) and refresh tokens
 
 ## Documentation map
 
-- **Architecture** — Layers, modes, and how requests hit handlers and services.
+- **Architecture** — Layers, modes, middleware order, background tasks, and media/notification flows (with diagrams).
+- **Backend structure** — Where handlers, services, jobs, and infra modules live; SQL and cache conventions.
+- **Backend Rust guide** — Reading order and how Rust patterns (`async`, `Clone`, extractors, errors) show up in this codebase.
 - **Platform components** — Postgres, Redis, object storage, queues, load balancer.
 - **API reference** — Tables of routes aligned with `src/http/routes.rs`.
 - **Scaling / limitations** — Caching, pagination, and pragmatic caps.

@@ -28,6 +28,136 @@ src/
 
 ---
 
+## Layer dependencies
+
+Handlers depend on services; services depend on domain types and infrastructure. `main.rs` wires config, infra, and `AppState`, then starts either the HTTP stack (`http::router`) or job loops. `jobs/` uses the same infra types (pool, storage, queue) without going through HTTP.
+
+```mermaid
+flowchart TB
+  mainRs[main.rs]
+  httpMod[http]
+  appMod[app]
+  domainMod[domain]
+  infraMod[infra]
+  configMod[config]
+  jobsMod[jobs]
+
+  mainRs --> httpMod
+  mainRs --> jobsMod
+  mainRs --> infraMod
+  mainRs --> configMod
+  httpMod --> appMod
+  appMod --> domainMod
+  appMod --> infraMod
+  appMod --> configMod
+  jobsMod --> infraMod
+```
+
+---
+
+## HTTP request lifecycle (global stack)
+
+`http/mod.rs` builds the route tree first (`merge` / `nest("/v1", …)` / `with_state`), then applies **global** `Router::layer` calls. In Axum, each new layer wraps the previous stack: the **last** layer registered is the **first** to see an incoming request (see [Axum middleware ordering](https://docs.rs/axum/latest/axum/middleware/index.html#ordering)).
+
+For this project, that means the outermost-to-innermost order on the request path is:
+
+1. **Request body limit** (`RequestBodyLimitLayer`)
+2. **Compression** (`CompressionLayer`)
+3. **Security headers / HTTPS expectations** (`security_headers_middleware`)
+4. **Request context** (trusted-proxy-aware client IP and scheme)
+5. **Propagate request ID** (`PropagateRequestIdLayer`)
+6. **Set request ID** (`SetRequestIdLayer` / `MakeRequestUuid`)
+7. **CORS** (mobile API: limited methods and headers)
+8. **Metrics** (`metrics_middleware`)
+
+Only then does the router dispatch to `/health`, `/metrics`, or nested `/v1/...` routes. Route groups under `/v1` add their own middleware (IP rate limit, per-user rate limit, ban checks) **inside** the nested router, in the order declared in `http/mod.rs`.
+
+```mermaid
+flowchart TB
+  req[IncomingRequest]
+
+  subgraph globalLayers [Global layers outer to inner]
+    bodyLimit[BodyLimit]
+    compression[Compression]
+    security[SecurityHeaders]
+    reqCtx[RequestContext]
+    propId[PropagateRequestId]
+    setId[SetRequestId]
+    cors[Cors]
+    metrics[Metrics]
+  end
+
+  subgraph v1 [Nested /v1 router]
+    groupMw[Group rate limit and ban]
+    extract[Extractors e.g. AuthUser]
+    handler[Handler and services]
+  end
+
+  req --> bodyLimit
+  bodyLimit --> compression
+  compression --> security
+  security --> reqCtx
+  reqCtx --> propId
+  propId --> setId
+  setId --> cors
+  cors --> metrics
+  metrics --> groupMw
+  groupMw --> extract
+  extract --> handler
+```
+
+---
+
+## API mode: in-process background work
+
+`APP_MODE=api` (and `combined`) is not only the HTTP server. `main.rs` also:
+
+- Spawns **`jobs::notifications::run_notification_worker`**, reading from an `mpsc` channel whose sender lives on `AppState`, so handlers can enqueue notification work without blocking on full delivery.
+- Spawns **`jobs::cleanup::run_cleanup_loop`** for periodic maintenance (for example story cleanup).
+
+On shutdown, a **`CancellationToken`** is cancelled and the process waits (with a timeout) for those tasks to finish after the HTTP server stops. That keeps background work visible in the same binary as the API while still using async tasks instead of mixing everything into request handlers.
+
+---
+
+## Media and notifications (data flow)
+
+**Media processing** decouples uploads from CPU-heavy work: the API persists intent in Postgres, enqueues a message, and returns; a **worker** process (or an extra task in `combined`) consumes the queue, reads/writes object storage, updates media rows, and acknowledges or retries based on transient vs permanent errors.
+
+**Notifications** use in-memory **`mpsc`** from API handlers to a dedicated task, which writes notification rows (and related logic) in Postgres—no queue required for that path, at the cost of losing unsent jobs if the process crashes before the worker drains the channel.
+
+```mermaid
+flowchart LR
+  client[Clients]
+  api[Ciel API]
+  pg[(Postgres)]
+  redis[(Redis)]
+  s3[(ObjectStorage)]
+  sqs[(Queue)]
+  worker[Media worker]
+  notifTask[Notification task]
+
+  client --> api
+  api --> pg
+  api --> redis
+  api --> s3
+  api --> sqs
+  api -->|"mpsc send"| notifTask
+  notifTask --> pg
+  sqs --> worker
+  worker --> pg
+  worker --> s3
+```
+
+**`combined` mode** runs the media **SQS consumer** in a `tokio::spawn` alongside the API, sharing `Db`, `ObjectStorage`, and `QueueClient` from the same `AppState`. **Split deployment** (`api` + separate `worker` processes) scales media throughput independently and is the usual production shape.
+
+---
+
+## Reading the Rust codebase
+
+For a step-by-step reading order and how Rust features map to these files, see [Backend Rust guide](/docs/backend-rust-guide/).
+
+---
+
 ## Runtime modes
 
 `APP_MODE` controls process behavior from a single binary:

@@ -2,6 +2,10 @@
 title: Backend structure
 ---
 
+For a guided tour of the Rust code (reading order, `Clone`/`Arc`/async patterns, trace-throughs), see [Backend Rust guide](/docs/backend-rust-guide/).
+
+---
+
 ## Handlers and routes
 
 - **`src/http/routes.rs`** — All route groups (`health`, `auth`, `users`, `posts`, …). Each function returns a `Router<AppState>`.
@@ -14,6 +18,65 @@ Versioning convention:
 
 - `/health` and `/metrics` live at root.
 - Product APIs are nested under `/v1/...`.
+
+---
+
+## `src/app/` services (module map)
+
+Each file under `src/app/` is a **service module** (business logic + SQL/cache). Declared in `src/app/mod.rs`:
+
+| Module | Role |
+|--------|------|
+| `auth` | Login, registration, token issue/refresh, access-token validation used by HTTP extractors |
+| `users` | Profiles, account settings, user lookup |
+| `posts` | Photo posts, captions, visibility |
+| `feed` | Home and related feeds, Redis-backed caching, cursor pagination |
+| `engagement` | Likes, comments, reactions |
+| `social` | Follow graph, relationships |
+| `media` | Upload flow, presigned URLs, enqueue processing |
+| `stories` | Ephemeral stories |
+| `search` | Search queries over public data |
+| `notifications` | Create and list notifications; `jobs::notifications` invokes this service from the `mpsc` worker |
+| `invites` | Invite codes and redemption |
+| `moderation` | Reports and moderation actions |
+| `trust` | Trust / safety-related user state |
+| `fingerprint` | Client fingerprinting helpers for abuse signals |
+| `rate_limiter` | Rate-limit bookkeeping backed by Redis/DB as implemented |
+
+---
+
+## `src/jobs/`
+
+Long-running or asynchronous work outside the request hot path:
+
+| Module | Role |
+|--------|------|
+| `media_processor` | SQS poll loop (or `combined` spawn), derivatives, idempotent DB updates |
+| `notifications` | Consumes `NotificationJob` from `mpsc`, writes notification-related rows |
+| `cleanup` | Periodic tasks (e.g. expired stories) |
+
+`APP_MODE=serverless-worker` in `main.rs` exposes a small **HTTP** router from `jobs::media_processor` for one-shot processing in serverless environments—separate from the main `http::router` stack.
+
+---
+
+## `src/infra/`
+
+Adapters for external systems; constructed at startup and held on `AppState`:
+
+| Module | Type | Typical use |
+|--------|------|-------------|
+| `db` | `Db` (SQLx pool) | All persistent state |
+| `cache` | `RedisCache` | Feed and rate-limit acceleration |
+| `storage` | `ObjectStorage` | S3-compatible uploads and processed keys |
+| `queue` | `QueueClient` | Enqueue media jobs for workers |
+
+Services take `Db` / cache handles via `::new` rather than calling infra modules directly from handlers.
+
+---
+
+## `src/http/validation.rs`
+
+Shared **input validation** helpers: max lengths, trimmed required strings, handle format rules. Handlers return `AppError::bad_request(...)` when validation fails, keeping rules in one place instead of duplicating checks across `handlers.rs`.
 
 ---
 
@@ -85,7 +148,7 @@ This keeps SQL/infra details out of response payloads while still making errors 
 
 ## AppState boundary
 
-`AppState` (in `main.rs`) is the composition root for runtime dependencies:
+`AppState` is defined in `src/lib.rs` and **constructed** in `src/main.rs`—the composition root for runtime dependencies:
 
 - `Db`, `RedisCache`, `ObjectStorage`, `QueueClient`
 - auth/token settings and TTLs

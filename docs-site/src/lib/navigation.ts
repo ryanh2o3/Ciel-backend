@@ -13,6 +13,7 @@ export const navigation = [
     links: [
       { title: 'System architecture', href: '/docs/architecture/' },
       { title: 'Backend structure', href: '/docs/backend-structure/' },
+      { title: 'Backend Rust guide', href: '/docs/backend-rust-guide/' },
       { title: 'Data and migrations', href: '/docs/data-and-migrations/' },
     ],
   },
