@@ -52,7 +52,7 @@ output "worker_instance_ips" {
 # Serverless worker outputs
 output "serverless_worker_endpoint" {
   description = "Serverless media worker endpoint URL"
-  value       = var.enable_serverless_worker ? scaleway_container.media_processor[0].domain_name : null
+  value       = var.enable_serverless_worker ? scaleway_container.media_processor[0].public_endpoint : null
 }
 
 output "serverless_worker_id" {

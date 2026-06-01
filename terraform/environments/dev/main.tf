@@ -215,6 +215,7 @@ module "compute" {
   queue_endpoint         = module.messaging.queue_endpoint
   queue_region           = var.region
   queue_name             = module.messaging.queue_name
+  queue_url              = module.messaging.queue_url
   sqs_access_key         = module.messaging.sqs_access_key
   sqs_secret_key         = module.messaging.sqs_secret_key
   paseto_access_key      = var.paseto_access_key

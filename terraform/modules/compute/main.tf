@@ -275,7 +275,6 @@ resource "scaleway_container" "media_processor" {
   min_scale      = var.serverless_worker_min_scale
   max_scale      = var.serverless_worker_max_scale
   timeout        = var.serverless_worker_timeout
-  deploy         = true
 
   environment_variables = {
     APP_MODE    = "serverless-worker"
@@ -293,15 +292,24 @@ resource "scaleway_container" "media_processor" {
   }
 }
 
+# Each SQS message → one POST / invocation on the container.
+# The worker's HTTP handler at POST / consumes the message body (see
+# src/jobs/media_processor.rs handle_media_job).
 resource "scaleway_container_trigger" "sqs_media" {
   count = var.enable_serverless_worker ? 1 : 0
 
   container_id = scaleway_container.media_processor[0].id
   name         = "media-jobs-trigger"
 
+  destination_config {
+    http_path   = "/"
+    http_method = "post"
+  }
+
   sqs {
-    project_id = var.project_id
-    queue      = var.queue_name
-    region     = var.queue_region
+    endpoint   = var.queue_endpoint
+    queue_url  = var.queue_url
+    access_key = var.sqs_access_key
+    secret_key = var.sqs_secret_key
   }
 }

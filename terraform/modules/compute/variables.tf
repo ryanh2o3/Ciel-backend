@@ -276,6 +276,12 @@ variable "queue_name" {
   type        = string
 }
 
+variable "queue_url" {
+  description = "Fully-qualified SQS queue URL (required by serverless container trigger)"
+  type        = string
+  default     = ""
+}
+
 variable "sqs_access_key" {
   description = "SQS access key"
   type        = string
