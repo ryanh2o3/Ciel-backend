@@ -101,6 +101,8 @@ locals {
     paseto_refresh_key     = var.paseto_refresh_key
     admin_token            = var.admin_token
     rust_log               = var.rust_log
+    # Only run the worker on the box when the serverless container isn't.
+    run_local_worker = !var.enable_serverless_worker
   }) : ""
 }
 

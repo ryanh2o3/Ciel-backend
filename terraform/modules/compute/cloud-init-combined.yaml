@@ -133,6 +133,7 @@ write_files:
             timeout: 10s
             retries: 3
             start_period: 40s
+%{ if run_local_worker ~}
         worker:
           image: ${container_image}:${image_tag}
           restart: unless-stopped
@@ -148,6 +149,7 @@ write_files:
             options:
               max-size: "10m"
               max-file: "3"
+%{ endif ~}
         proxy:
           image: caddy:2-alpine
           restart: unless-stopped

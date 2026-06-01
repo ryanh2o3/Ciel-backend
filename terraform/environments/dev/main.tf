@@ -177,11 +177,13 @@ module "compute" {
   api_instance_count    = 0
   worker_instance_count = 0
 
-  # Serverless Container for media processing
-  enable_serverless_worker    = false # Enable after pushing container image
-  serverless_worker_cpu       = 1000  # 1 vCPU
-  serverless_worker_memory    = 1024  # 1024 MB (minimum for 1 vCPU)
-  serverless_worker_min_scale = 0     # Scale to zero
+  # Serverless Container for media processing — scales 0→3 on SQS demand.
+  # The matching docker-compose `worker` service on the combined instance is
+  # auto-disabled when this is true (see cloud-init-combined.yaml).
+  enable_serverless_worker    = true
+  serverless_worker_cpu       = 1000 # 1 vCPU
+  serverless_worker_memory    = 1024 # 1024 MB (minimum for 1 vCPU)
+  serverless_worker_min_scale = 0    # Scale to zero
   serverless_worker_max_scale = 3
   serverless_database_url     = local.serverless_database_url
   serverless_s3_access_key    = module.storage.s3_access_key
