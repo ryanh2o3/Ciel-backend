@@ -266,15 +266,20 @@ resource "scaleway_container_namespace" "worker" {
 resource "scaleway_container" "media_processor" {
   count = var.enable_serverless_worker ? 1 : 0
 
-  name           = "media-processor"
-  namespace_id   = scaleway_container_namespace.worker[0].id
-  registry_image = "${var.container_image}:${var.container_image_tag}"
-  port           = 8080
-  cpu_limit      = var.serverless_worker_cpu
-  memory_limit   = var.serverless_worker_memory
-  min_scale      = var.serverless_worker_min_scale
-  max_scale      = var.serverless_worker_max_scale
-  timeout        = var.serverless_worker_timeout
+  name         = "media-processor"
+  namespace_id = scaleway_container_namespace.worker[0].id
+  image        = "${var.container_image}:${var.container_image_tag}"
+  port         = 8080
+  cpu_limit    = var.serverless_worker_cpu
+  memory_limit = var.serverless_worker_memory
+  min_scale    = var.serverless_worker_min_scale
+  max_scale    = var.serverless_worker_max_scale
+  timeout      = var.serverless_worker_timeout
+
+  # Attach to the same Private Network as the managed Postgres so the
+  # worker can reach the DB on its private IP. Without this the container
+  # only has public egress and times out connecting to the DB pool.
+  private_network_id = var.private_network_id
 
   environment_variables = {
     APP_MODE    = "serverless-worker"
