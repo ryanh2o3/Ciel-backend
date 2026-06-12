@@ -51,7 +51,7 @@ impl FingerprintService {
              ON CONFLICT (fingerprint_hash) DO NOTHING",
         )
         .bind(&fingerprint_hash)
-        .bind(&Vec::<Uuid>::new())
+        .bind(Vec::<Uuid>::new())
         .bind(&user_agent)
         .execute(&mut *tx)
         .await?;
