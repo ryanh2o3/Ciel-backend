@@ -19,6 +19,12 @@ pub struct Post {
     pub owner_avatar_key: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub owner_avatar_url: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub like_count: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub comment_count: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub liked_by_viewer: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

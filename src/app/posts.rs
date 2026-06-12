@@ -109,6 +109,9 @@ impl PostService {
             created_at: row.get("created_at"),
             owner_avatar_key: row.get("owner_avatar_key"),
             owner_avatar_url: None,
+            like_count: None,
+            comment_count: None,
+            liked_by_viewer: None,
         })
     }
 
@@ -150,7 +153,10 @@ impl PostService {
                     "SELECT p.id, p.owner_id, u.handle AS owner_handle, u.display_name AS owner_display_name, \
                             u.avatar_key AS owner_avatar_key, \
                             COALESCE(ARRAY(SELECT pm.media_id FROM post_media pm WHERE pm.post_id = p.id ORDER BY pm.position), ARRAY[]::uuid[]) AS media_ids, \
-                            p.caption, p.visibility::text AS visibility, p.created_at \
+                            p.caption, p.visibility::text AS visibility, p.created_at, \
+                            (SELECT COUNT(*)::bigint FROM likes l WHERE l.post_id = p.id) AS like_count, \
+                            (SELECT COUNT(*)::bigint FROM comments c WHERE c.post_id = p.id) AS comment_count, \
+                            EXISTS(SELECT 1 FROM likes l WHERE l.post_id = p.id AND l.user_id = $2) AS liked_by_viewer \
                      FROM posts p \
                      JOIN users u ON p.owner_id = u.id AND u.deleted_at IS NULL \
                      WHERE p.id = $1 \
@@ -175,7 +181,9 @@ impl PostService {
                     "SELECT p.id, p.owner_id, u.handle AS owner_handle, u.display_name AS owner_display_name, \
                             u.avatar_key AS owner_avatar_key, \
                             COALESCE(ARRAY(SELECT pm.media_id FROM post_media pm WHERE pm.post_id = p.id ORDER BY pm.position), ARRAY[]::uuid[]) AS media_ids, \
-                            p.caption, p.visibility::text AS visibility, p.created_at \
+                            p.caption, p.visibility::text AS visibility, p.created_at, \
+                            (SELECT COUNT(*)::bigint FROM likes l WHERE l.post_id = p.id) AS like_count, \
+                            (SELECT COUNT(*)::bigint FROM comments c WHERE c.post_id = p.id) AS comment_count \
                      FROM posts p \
                      JOIN users u ON p.owner_id = u.id AND u.deleted_at IS NULL \
                      WHERE p.id = $1 AND p.visibility = 'public'",
@@ -203,6 +211,9 @@ impl PostService {
                     created_at: row.get("created_at"),
                     owner_avatar_key: row.get("owner_avatar_key"),
                     owner_avatar_url: None,
+                    like_count: Some(row.get("like_count")),
+                    comment_count: Some(row.get("comment_count")),
+                    liked_by_viewer: viewer_id.map(|_| row.get("liked_by_viewer")),
                 })
             }
             None => None,
@@ -253,6 +264,9 @@ impl PostService {
                     created_at: row.get("created_at"),
                     owner_avatar_key: row.get("owner_avatar_key"),
                     owner_avatar_url: None,
+                    like_count: None,
+                    comment_count: None,
+                    liked_by_viewer: None,
                 })
             }
             None => None,
@@ -399,6 +413,9 @@ impl PostService {
                 created_at: row.get("created_at"),
                 owner_avatar_key: row.get("owner_avatar_key"),
                 owner_avatar_url: None,
+                like_count: None,
+                comment_count: None,
+                liked_by_viewer: None,
             });
         }
 

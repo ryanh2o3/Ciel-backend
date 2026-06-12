@@ -1585,6 +1585,58 @@ pub async fn flag_user(
     Ok(Json(flag))
 }
 
+pub async fn flag_post(
+    auth: AuthUser,
+    Path(id): Path<Uuid>,
+    State(state): State<AppState>,
+    Json(payload): Json<ModerationRequest>,
+) -> Result<Json<crate::domain::moderation::PostFlag>, AppError> {
+    let owner_id: Option<Uuid> = sqlx::query_scalar("SELECT owner_id FROM posts WHERE id = $1")
+        .bind(id)
+        .fetch_optional(state.db.pool())
+        .await
+        .map_err(|err| {
+            tracing::error!(error = ?err, post_id = %id, "failed to resolve post owner");
+            AppError::internal("failed to report post")
+        })?;
+
+    let Some(owner_id) = owner_id else {
+        return Err(AppError::not_found("post not found"));
+    };
+
+    if auth.user_id == owner_id {
+        return Err(AppError::bad_request("cannot report your own post"));
+    }
+
+    let service = ModerationService::new(state.db.clone());
+    let flag = service
+        .flag_post(auth.user_id, id, payload.reason)
+        .await
+        .map_err(|err| {
+            if let Some(db_err) = err
+                .downcast_ref::<sqlx::Error>()
+                .and_then(|e| e.as_database_error())
+            {
+                match db_err.code().as_deref() {
+                    Some("23505") => {
+                        return AppError::conflict("you have already reported this post")
+                    }
+                    Some("23503") => return AppError::not_found("post not found"),
+                    _ => {}
+                }
+            }
+            tracing::error!(error = ?err, reporter_id = %auth.user_id, post_id = %id, "failed to flag post");
+            AppError::internal("failed to report post")
+        })?;
+
+    let trust = crate::app::trust::TrustService::new(state.db.clone());
+    if let Err(err) = trust.record_flag(owner_id).await {
+        tracing::warn!(error = ?err, owner_id = %owner_id, "failed to record post flag in trust system");
+    }
+
+    Ok(Json(flag))
+}
+
 pub async fn takedown_post(
     auth: Option<AuthUser>,
     _admin: AdminToken,

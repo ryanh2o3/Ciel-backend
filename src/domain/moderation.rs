@@ -22,3 +22,13 @@ pub struct UserFlag {
     #[serde(with = "time::serde::rfc3339")]
     pub created_at: OffsetDateTime,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PostFlag {
+    pub id: Uuid,
+    pub reporter_id: Uuid,
+    pub post_id: Uuid,
+    pub reason: Option<String>,
+    #[serde(with = "time::serde::rfc3339")]
+    pub created_at: OffsetDateTime,
+}

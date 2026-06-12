@@ -3,7 +3,7 @@ use sqlx::Row;
 use time::OffsetDateTime;
 use uuid::Uuid;
 
-use crate::domain::moderation::{ModerationAction, UserFlag};
+use crate::domain::moderation::{ModerationAction, PostFlag, UserFlag};
 use crate::infra::db::Db;
 
 #[derive(Clone)]
@@ -50,6 +50,45 @@ impl ModerationService {
             id: flag_row.get("id"),
             reporter_id: flag_row.get("reporter_id"),
             target_id: flag_row.get("target_id"),
+            reason: flag_row.get("reason"),
+            created_at: flag_row.get("created_at"),
+        })
+    }
+
+    pub async fn flag_post(
+        &self,
+        reporter_id: Uuid,
+        post_id: Uuid,
+        reason: Option<String>,
+    ) -> Result<PostFlag> {
+        let mut tx = self.db.pool().begin().await?;
+        let flag_row = sqlx::query(
+            "INSERT INTO post_flags (reporter_id, post_id, reason) \
+             VALUES ($1, $2, $3) \
+             RETURNING id, reporter_id, post_id, reason, created_at",
+        )
+        .bind(reporter_id)
+        .bind(post_id)
+        .bind(&reason)
+        .fetch_one(&mut *tx)
+        .await?;
+
+        sqlx::query(
+            "INSERT INTO moderation_actions (actor_id, target_type, target_id, reason) \
+             VALUES ($1, 'post_flag', $2, $3)",
+        )
+        .bind(reporter_id)
+        .bind(post_id)
+        .bind(reason)
+        .execute(&mut *tx)
+        .await?;
+
+        tx.commit().await?;
+
+        Ok(PostFlag {
+            id: flag_row.get("id"),
+            reporter_id: flag_row.get("reporter_id"),
+            post_id: flag_row.get("post_id"),
             reason: flag_row.get("reason"),
             created_at: flag_row.get("created_at"),
         })

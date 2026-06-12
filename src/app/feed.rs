@@ -160,6 +160,9 @@ impl FeedService {
                 created_at: row.get("created_at"),
                 owner_avatar_key: row.get("owner_avatar_key"),
                 owner_avatar_url: None,
+                like_count: None,
+                comment_count: None,
+                liked_by_viewer: None,
             });
         }
 

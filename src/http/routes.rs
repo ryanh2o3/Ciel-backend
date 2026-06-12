@@ -88,6 +88,10 @@ pub fn moderation() -> Router<AppState> {
             post(handlers::flag_user),
         )
         .route(
+            "/moderation/posts/:id/flag",
+            post(handlers::flag_post),
+        )
+        .route(
             "/moderation/posts/:id/takedown",
             post(handlers::takedown_post),
         )

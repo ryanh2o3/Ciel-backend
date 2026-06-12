@@ -63,6 +63,17 @@ pub async fn run_notification_worker(
     }
 }
 
+async fn actor_handle(db: &Db, user_id: Uuid) -> Option<String> {
+    sqlx::query_scalar(
+        "SELECT handle FROM users WHERE id = $1 AND deleted_at IS NULL",
+    )
+    .bind(user_id)
+    .fetch_optional(db.pool())
+    .await
+    .ok()
+    .flatten()
+}
+
 async fn process_job(db: &Db, job: NotificationJob) -> anyhow::Result<()> {
     let notif_svc = NotificationService::new(db.clone());
     match job {
@@ -70,8 +81,15 @@ async fn process_job(db: &Db, job: NotificationJob) -> anyhow::Result<()> {
             followee_id,
             actor_id,
         } => {
+            let handle = actor_handle(db, actor_id).await;
+            let mut payload = json!({
+                "follower_id": actor_id.to_string(),
+            });
+            if let Some(handle) = handle {
+                payload["follower_handle"] = json!(handle);
+            }
             notif_svc
-                .create_if_not_self(followee_id, actor_id, "user_followed", json!({}))
+                .create_if_not_self(followee_id, actor_id, "user_followed", payload)
                 .await?;
         }
         NotificationJob::PostLiked { post_id, actor_id } => {
@@ -82,7 +100,14 @@ async fn process_job(db: &Db, job: NotificationJob) -> anyhow::Result<()> {
                     .await?;
             if let Some(row) = owner_row {
                 let owner_id: Uuid = row.get("owner_id");
-                let payload = json!({ "post_id": post_id.to_string() });
+                let handle = actor_handle(db, actor_id).await;
+                let mut payload = json!({
+                    "post_id": post_id.to_string(),
+                    "liker_id": actor_id.to_string(),
+                });
+                if let Some(handle) = handle {
+                    payload["liker_handle"] = json!(handle);
+                }
                 notif_svc
                     .create_if_not_self(owner_id, actor_id, "post_liked", payload)
                     .await?;
@@ -100,10 +125,15 @@ async fn process_job(db: &Db, job: NotificationJob) -> anyhow::Result<()> {
                     .await?;
             if let Some(row) = owner_row {
                 let owner_id: Uuid = row.get("owner_id");
-                let payload = json!({
+                let handle = actor_handle(db, actor_id).await;
+                let mut payload = json!({
                     "post_id": post_id.to_string(),
                     "comment_preview": preview,
+                    "commenter_id": actor_id.to_string(),
                 });
+                if let Some(handle) = handle {
+                    payload["commenter_handle"] = json!(handle);
+                }
                 notif_svc
                     .create_if_not_self(owner_id, actor_id, "post_commented", payload)
                     .await?;
@@ -121,10 +151,15 @@ async fn process_job(db: &Db, job: NotificationJob) -> anyhow::Result<()> {
                     .await?;
             if let Some(row) = owner_row {
                 let owner_id: Uuid = row.get("user_id");
-                let payload = json!({
+                let handle = actor_handle(db, actor_id).await;
+                let mut payload = json!({
                     "story_id": story_id.to_string(),
                     "emoji": emoji,
+                    "reactor_id": actor_id.to_string(),
                 });
+                if let Some(handle) = handle {
+                    payload["reactor_handle"] = json!(handle);
+                }
                 notif_svc
                     .create_if_not_self(owner_id, actor_id, "story_reaction", payload)
                     .await?;
