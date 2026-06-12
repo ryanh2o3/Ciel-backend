@@ -11,6 +11,17 @@ pub struct RateLimitInfo {
     pub remaining: u32,
 }
 
+/// Atomically increments the counter and sets the TTL on first increment.
+/// Doing this in one Lua script closes the check-then-increment race that
+/// previously let bursts of concurrent requests exceed the limit.
+const INCR_WITH_TTL_SCRIPT: &str = r#"
+local count = redis.call('INCR', KEYS[1])
+if count == 1 then
+  redis.call('EXPIRE', KEYS[1], ARGV[1])
+end
+return count
+"#;
+
 #[derive(Clone)]
 pub struct RateLimiter {
     cache: RedisCache,
@@ -21,8 +32,20 @@ impl RateLimiter {
         Self { cache }
     }
 
-    /// Rate limit check result with quota information for response headers.
-    pub async fn check_rate_limit(
+    async fn incr_with_ttl(&self, key: &str, ttl_seconds: u64) -> Result<u32> {
+        let mut conn = self.cache.conn();
+        let count: u32 = redis::Script::new(INCR_WITH_TTL_SCRIPT)
+            .key(key)
+            .arg(ttl_seconds)
+            .invoke_async(&mut conn)
+            .await?;
+        Ok(count)
+    }
+
+    /// Atomically check-and-consume one unit of quota for an action.
+    /// Errors propagate to the caller (fail closed) rather than silently
+    /// allowing unlimited traffic when Redis is unavailable.
+    pub async fn check_and_increment(
         &self,
         user_id: Uuid,
         action: &str,
@@ -53,13 +76,11 @@ impl RateLimiter {
             _ => return Ok(RateLimitInfo { limited: false, limit: 0, remaining: 0 }),
         };
 
-        let mut conn = self.cache.client().get_multiplexed_async_connection().await?;
-
         // Track the tightest (most constrained) window for response headers
         let mut min_remaining = u32::MAX;
         let mut effective_limit: u32 = 0;
+        let mut limited = false;
 
-        // Check all applicable windows
         for (limit, window) in checks {
             let window_seconds = window.seconds();
             let key = format!(
@@ -69,7 +90,7 @@ impl RateLimiter {
                 current_window(window_seconds)
             );
 
-            let count: u32 = conn.get(&key).await.unwrap_or(0);
+            let count = self.incr_with_ttl(&key, window_seconds).await?;
             let remaining = limit.saturating_sub(count);
 
             if remaining < min_remaining {
@@ -77,7 +98,7 @@ impl RateLimiter {
                 effective_limit = limit;
             }
 
-            if count >= limit {
+            if count > limit {
                 tracing::debug!(
                     user_id = %user_id,
                     action = action,
@@ -86,54 +107,18 @@ impl RateLimiter {
                     limit = limit,
                     "Rate limit exceeded"
                 );
-                return Ok(RateLimitInfo { limited: true, limit, remaining: 0 });
+                limited = true;
             }
         }
 
         Ok(RateLimitInfo {
-            limited: false,
+            limited,
             limit: effective_limit,
             remaining: min_remaining,
         })
     }
 
-    /// Increment rate limit counter for an action
-    pub async fn increment(
-        &self,
-        user_id: Uuid,
-        action: &str,
-    ) -> Result<()> {
-        let windows = match action {
-            "post" => vec![RateWindow::Hour, RateWindow::Day],
-            "follow" => vec![RateWindow::Hour, RateWindow::Day],
-            "unfollow" => vec![RateWindow::Day],
-            "like" | "comment" | "login" => vec![RateWindow::Hour],
-            "feed" | "notifications" | "search" | "media_read" | "media_upload" | "moderation" => {
-                vec![RateWindow::Hour]
-            }
-            _ => return Ok(()), // Unknown action, skip
-        };
-
-        let mut conn = self.cache.client().get_multiplexed_async_connection().await?;
-
-        for window in windows {
-            let window_seconds = window.seconds();
-            let key = format!(
-                "ratelimit:{}:{}:{}",
-                user_id,
-                action,
-                current_window(window_seconds)
-            );
-
-            let _: () = conn.incr(&key, 1).await?;
-            // Always set TTL to ensure keys expire even after Redis restarts
-            let _: () = conn.expire(&key, window_seconds as i64).await?;
-        }
-
-        Ok(())
-    }
-
-    /// Get remaining quota for an action
+    /// Get remaining quota for an action (informational; does not consume quota).
     pub async fn get_remaining(
         &self,
         user_id: Uuid,
@@ -160,14 +145,15 @@ impl RateLimiter {
             current_window(window_seconds)
         );
 
-        let mut conn = self.cache.client().get_multiplexed_async_connection().await?;
-        let count: u32 = conn.get(&key).await.unwrap_or(0);
+        let mut conn = self.cache.conn();
+        let count: Option<u32> = conn.get(&key).await?;
 
-        Ok(limit.saturating_sub(count))
+        Ok(limit.saturating_sub(count.unwrap_or(0)))
     }
 
-    /// Check rate limit by IP address (for unauthenticated requests)
-    pub async fn check_ip_rate_limit(
+    /// Atomically check-and-consume IP-based quota (for unauthenticated requests).
+    /// Returns true when the request should be rejected.
+    pub async fn check_and_increment_ip(
         &self,
         ip: &str,
         action: &str,
@@ -177,11 +163,9 @@ impl RateLimiter {
         let window_seconds = window.seconds();
         let key = format!("ratelimit:ip:{}:{}:{}", ip, action, current_window(window_seconds));
 
-        let mut conn = self.cache.client().get_multiplexed_async_connection().await?;
+        let count = self.incr_with_ttl(&key, window_seconds).await?;
 
-        let count: u32 = conn.get(&key).await.unwrap_or(0);
-
-        if count >= limit {
+        if count > limit {
             tracing::debug!(
                 ip = ip,
                 action = action,
@@ -189,22 +173,9 @@ impl RateLimiter {
                 limit = limit,
                 "IP rate limit exceeded"
             );
-            return Ok(true); // Rate limited
+            return Ok(true);
         }
 
         Ok(false)
-    }
-
-    /// Increment IP-based rate limit counter
-    pub async fn increment_ip(&self, ip: &str, action: &str, window: RateWindow) -> Result<()> {
-        let window_seconds = window.seconds();
-        let key = format!("ratelimit:ip:{}:{}:{}", ip, action, current_window(window_seconds));
-
-        let mut conn = self.cache.client().get_multiplexed_async_connection().await?;
-
-        let _: () = conn.incr(&key, 1).await?;
-        let _: () = conn.expire(&key, window_seconds as i64).await?;
-
-        Ok(())
     }
 }

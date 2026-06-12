@@ -44,13 +44,15 @@ locals {
 # Standard API-only cloud-init (multi-instance mode)
 locals {
   cloud_init_api = !var.enable_combined_mode ? templatefile("${path.module}/cloud-init-api.yaml", {
-    container_image    = var.container_image
-    image_tag          = var.container_image_tag
-    scw_access_key     = scaleway_iam_api_key.runtime.access_key
-    scw_secret_key     = scaleway_iam_api_key.runtime.secret_key
-    scw_region         = var.region
-    http_addr          = var.http_addr
-    database_url       = local.database_url
+    container_image        = var.container_image
+    image_tag              = var.container_image_tag
+    scw_access_key         = scaleway_iam_api_key.runtime.access_key
+    scw_secret_key         = scaleway_iam_api_key.runtime.secret_key
+    scw_region             = var.region
+    http_addr              = var.http_addr
+    database_url           = local.database_url
+    migration_database_url = var.migration_database_url
+    db_user                = var.db_user
     redis_url          = local.redis_url
     s3_endpoint        = var.s3_endpoint
     s3_region          = var.s3_region

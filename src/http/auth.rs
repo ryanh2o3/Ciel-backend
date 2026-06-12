@@ -26,6 +26,13 @@ impl FromRequestParts<AppState> for AuthUser {
         parts: &mut Parts,
         state: &AppState,
     ) -> Result<Self, Self::Rejection> {
+        // The extractor runs in several middleware layers plus the handler;
+        // cache the validated identity in request extensions so the token is
+        // only decrypted and checked against the database once per request.
+        if let Some(cached) = parts.extensions.get::<AuthUser>() {
+            return Ok(cached.clone());
+        }
+
         let auth_header = parts
             .headers
             .get(header::AUTHORIZATION)
@@ -51,9 +58,11 @@ impl FromRequestParts<AppState> for AuthUser {
             .map_err(|_| AppError::unauthorized("invalid or expired token"))?;
 
         let session = session.ok_or_else(|| AppError::unauthorized("invalid token"))?;
-        Ok(AuthUser {
+        let user = AuthUser {
             user_id: session.user_id,
-        })
+        };
+        parts.extensions.insert(user.clone());
+        Ok(user)
     }
 }
 

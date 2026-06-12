@@ -55,22 +55,24 @@ impl ModerationService {
         })
     }
 
+    /// Returns the owner id of the removed post, or None if it didn't exist.
     pub async fn takedown_post(
         &self,
         actor_id: Option<Uuid>,
         post_id: Uuid,
         reason: Option<String>,
-    ) -> Result<bool> {
+    ) -> Result<Option<Uuid>> {
         let mut tx = self.db.pool().begin().await?;
-        let result = sqlx::query("DELETE FROM posts WHERE id = $1")
-            .bind(post_id)
-            .execute(&mut *tx)
-            .await?;
+        let owner: Option<Uuid> =
+            sqlx::query_scalar("DELETE FROM posts WHERE id = $1 RETURNING owner_id")
+                .bind(post_id)
+                .fetch_optional(&mut *tx)
+                .await?;
 
-        if result.rows_affected() == 0 {
+        let Some(owner_id) = owner else {
             tx.rollback().await?;
-            return Ok(false);
-        }
+            return Ok(None);
+        };
 
         sqlx::query(
             "INSERT INTO moderation_actions (actor_id, target_type, target_id, reason) \
@@ -83,25 +85,27 @@ impl ModerationService {
         .await?;
 
         tx.commit().await?;
-        Ok(true)
+        Ok(Some(owner_id))
     }
 
+    /// Returns the author id of the removed comment, or None if it didn't exist.
     pub async fn takedown_comment(
         &self,
         actor_id: Option<Uuid>,
         comment_id: Uuid,
         reason: Option<String>,
-    ) -> Result<bool> {
+    ) -> Result<Option<Uuid>> {
         let mut tx = self.db.pool().begin().await?;
-        let result = sqlx::query("DELETE FROM comments WHERE id = $1")
-            .bind(comment_id)
-            .execute(&mut *tx)
-            .await?;
+        let owner: Option<Uuid> =
+            sqlx::query_scalar("DELETE FROM comments WHERE id = $1 RETURNING user_id")
+                .bind(comment_id)
+                .fetch_optional(&mut *tx)
+                .await?;
 
-        if result.rows_affected() == 0 {
+        let Some(owner_id) = owner else {
             tx.rollback().await?;
-            return Ok(false);
-        }
+            return Ok(None);
+        };
 
         sqlx::query(
             "INSERT INTO moderation_actions (actor_id, target_type, target_id, reason) \
@@ -114,7 +118,7 @@ impl ModerationService {
         .await?;
 
         tx.commit().await?;
-        Ok(true)
+        Ok(Some(owner_id))
     }
 
     pub async fn list_audit(

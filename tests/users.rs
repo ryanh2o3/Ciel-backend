@@ -564,7 +564,7 @@ async fn delete_account_cascades_follows() {
         .await;
     assert_eq!(resp.status, StatusCode::OK);
     let body = resp.json();
-    assert!(body["items"].as_array().unwrap().len() >= 1);
+    assert!(!body["items"].as_array().unwrap().is_empty());
 
     // Delete A's account
     let resp = app.delete("/v1/account", Some(&user_a.access_token)).await;

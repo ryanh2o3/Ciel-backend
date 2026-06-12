@@ -26,6 +26,9 @@ pub struct AppConfig {
     pub db_connect_timeout_seconds: u64,
     pub db_idle_timeout_seconds: u64,
     pub db_max_lifetime_seconds: u64,
+    /// Per-connection Postgres statement_timeout (guards against stuck queries
+    /// exhausting the pool).
+    pub db_statement_timeout_seconds: u64,
     pub admin_token: Option<String>,
     pub upload_url_ttl_seconds: u64,
     pub upload_max_bytes: i64,
@@ -54,6 +57,15 @@ impl AppConfig {
         let s3_region = env_or("S3_REGION", "fr-par");
         let queue_region = std::env::var("QUEUE_REGION").unwrap_or_else(|_| s3_region.clone());
 
+        let paseto_access_key = if is_serverless { [0u8; 32] } else { env_key_32("PASETO_ACCESS_KEY")? };
+        let paseto_refresh_key = if is_serverless { [0u8; 32] } else { env_key_32("PASETO_REFRESH_KEY")? };
+        if !is_serverless && (paseto_access_key == [0u8; 32] || paseto_refresh_key == [0u8; 32]) {
+            tracing::warn!(
+                "PASETO key(s) decode to all zeros (the documented dev default). \
+                 Anyone can forge tokens — generate real keys before exposing this server."
+            );
+        }
+
         Ok(Self {
             http_addr,
             app_mode,
@@ -72,11 +84,12 @@ impl AppConfig {
             db_connect_timeout_seconds: env_or_parse("DB_CONNECT_TIMEOUT_SECONDS", "5")?,
             db_idle_timeout_seconds: env_or_parse("DB_IDLE_TIMEOUT_SECONDS", "300")?,
             db_max_lifetime_seconds: env_or_parse("DB_MAX_LIFETIME_SECONDS", "1800")?,
+            db_statement_timeout_seconds: env_or_parse("DB_STATEMENT_TIMEOUT_SECONDS", "30")?,
             admin_token: std::env::var("ADMIN_TOKEN").ok(),
             upload_url_ttl_seconds: env_or_parse("UPLOAD_URL_TTL_SECONDS", "900")?,
             upload_max_bytes: env_or_parse("UPLOAD_MAX_BYTES", "10485760")?,
-            paseto_access_key: if is_serverless { [0u8; 32] } else { env_key_32("PASETO_ACCESS_KEY")? },
-            paseto_refresh_key: if is_serverless { [0u8; 32] } else { env_key_32("PASETO_REFRESH_KEY")? },
+            paseto_access_key,
+            paseto_refresh_key,
             access_ttl_minutes: env_or_parse("ACCESS_TTL_MINUTES", "15")?,
             refresh_ttl_days: env_or_parse("REFRESH_TTL_DAYS", "30")?,
             ip_signup_rate_limit: env_or_parse("IP_SIGNUP_RATE_LIMIT", "3")?,

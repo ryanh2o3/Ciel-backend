@@ -39,172 +39,119 @@ impl FingerprintService {
         user_id: Option<Uuid>,
         user_agent: Option<String>,
     ) -> Result<DeviceInfo> {
-        // Check if fingerprint exists
-        let existing = sqlx::query(
-            "SELECT fingerprint_hash, user_ids, account_count, risk_score, is_blocked \
-             FROM device_fingerprints \
-             WHERE fingerprint_hash = $1",
+        let mut tx = self.db.pool().begin().await?;
+
+        // Ensure the row exists (no-op on conflict) so the follow-up SELECT
+        // FOR UPDATE always has something to lock, even under concurrent first
+        // registration from the same device.
+        sqlx::query(
+            "INSERT INTO device_fingerprints \
+             (fingerprint_hash, user_ids, account_count, risk_score, user_agent) \
+             VALUES ($1, $2, 0, 0, $3) \
+             ON CONFLICT (fingerprint_hash) DO NOTHING",
         )
         .bind(&fingerprint_hash)
-        .fetch_optional(self.db.pool())
+        .bind(&Vec::<Uuid>::new())
+        .bind(&user_agent)
+        .execute(&mut *tx)
         .await?;
 
-        if let Some(row) = existing {
-            let mut user_ids: Vec<Uuid> = row.get("user_ids");
-            let account_count: i32 = row.get("account_count");
-            let mut risk_score: i32 = row.get("risk_score");
-            let is_blocked: bool = row.get("is_blocked");
+        let row = sqlx::query(
+            "SELECT fingerprint_hash, user_ids, account_count, risk_score, is_blocked \
+             FROM device_fingerprints \
+             WHERE fingerprint_hash = $1 \
+             FOR UPDATE",
+        )
+        .bind(&fingerprint_hash)
+        .fetch_one(&mut *tx)
+        .await?;
 
-            // Check if already blocked
-            if is_blocked {
-                return Ok(DeviceInfo {
-                    fingerprint_hash,
-                    user_ids,
-                    account_count,
-                    risk_score,
-                    is_blocked: true,
-                });
-            }
+        let mut user_ids: Vec<Uuid> = row.get("user_ids");
+        let account_count: i32 = row.get("account_count");
+        let mut risk_score: i32 = row.get("risk_score");
+        let is_blocked: bool = row.get("is_blocked");
 
-            // Only process user association if user_id is provided
-            if let Some(user_id) = user_id {
-                // Add user if not already associated
-                if !user_ids.contains(&user_id) {
-                    user_ids.push(user_id);
+        if is_blocked {
+            tx.commit().await?;
+            return Ok(DeviceInfo {
+                fingerprint_hash,
+                user_ids,
+                account_count,
+                risk_score,
+                is_blocked: true,
+            });
+        }
 
-                    // Increase risk score based on number of accounts
-                    let risk_increase = match account_count {
-                        0..=2 => 5,
-                        3..=5 => 15,
-                        6..=10 => 30,
-                        _ => 50,
-                    };
+        if let Some(user_id) = user_id {
+            if !user_ids.contains(&user_id) {
+                user_ids.push(user_id);
 
-                    risk_score = (risk_score + risk_increase).min(100);
-                    let new_account_count = user_ids.len() as i32;
+                let risk_increase = match account_count {
+                    0..=2 => 5,
+                    3..=5 => 15,
+                    6..=10 => 30,
+                    _ => 50,
+                };
 
-                    sqlx::query(
-                        "UPDATE device_fingerprints \
-                         SET user_ids = $1, \
-                             account_count = $2, \
-                             risk_score = $3, \
-                             last_seen_at = NOW(), \
-                             updated_at = NOW() \
-                         WHERE fingerprint_hash = $4",
-                    )
-                    .bind(&user_ids)
-                    .bind(new_account_count)
-                    .bind(risk_score)
-                    .bind(&fingerprint_hash)
-                    .execute(self.db.pool())
-                    .await?;
+                risk_score = (risk_score + risk_increase).min(100);
+                let new_account_count = user_ids.len() as i32;
 
-                    tracing::info!(
-                        fingerprint_hash = &fingerprint_hash[..8],
-                        account_count = new_account_count,
-                        risk_score = risk_score,
-                        "Device fingerprint updated"
-                    );
-
-                    return Ok(DeviceInfo {
-                        fingerprint_hash,
-                        user_ids,
-                        account_count: new_account_count,
-                        risk_score,
-                        is_blocked: false,
-                    });
-                } else {
-                    // Just update last seen
-                    sqlx::query(
-                        "UPDATE device_fingerprints \
-                         SET last_seen_at = NOW() \
-                         WHERE fingerprint_hash = $1",
-                    )
-                    .bind(&fingerprint_hash)
-                    .execute(self.db.pool())
-                    .await?;
-
-                    return Ok(DeviceInfo {
-                        fingerprint_hash,
-                        user_ids,
-                        account_count,
-                        risk_score,
-                        is_blocked: false,
-                    });
-                }
-            } else {
-                // No user_id provided, just update last seen for existing device
                 sqlx::query(
                     "UPDATE device_fingerprints \
-                     SET last_seen_at = NOW() \
-                     WHERE fingerprint_hash = $1",
+                     SET user_ids = $1, \
+                         account_count = $2, \
+                         risk_score = $3, \
+                         last_seen_at = NOW(), \
+                         updated_at = NOW(), \
+                         user_agent = COALESCE($4, user_agent) \
+                     WHERE fingerprint_hash = $5",
                 )
+                .bind(&user_ids)
+                .bind(new_account_count)
+                .bind(risk_score)
+                .bind(&user_agent)
                 .bind(&fingerprint_hash)
-                .execute(self.db.pool())
+                .execute(&mut *tx)
                 .await?;
 
+                tracing::info!(
+                    fingerprint_hash = &fingerprint_hash[..8],
+                    account_count = new_account_count,
+                    risk_score = risk_score,
+                    "Device fingerprint updated"
+                );
+
+                tx.commit().await?;
                 return Ok(DeviceInfo {
                     fingerprint_hash,
                     user_ids,
-                    account_count,
+                    account_count: new_account_count,
                     risk_score,
                     is_blocked: false,
                 });
             }
-        } else {
-            // New fingerprint
-            if let Some(user_id) = user_id {
-                // Authenticated registration - associate with user
-                sqlx::query(
-                    "INSERT INTO device_fingerprints \
-                     (fingerprint_hash, user_ids, account_count, risk_score, user_agent) \
-                     VALUES ($1, $2, 1, 0, $3)",
-                )
-                .bind(&fingerprint_hash)
-                .bind(&vec![user_id])
-                .bind(user_agent)
-                .execute(self.db.pool())
-                .await?;
-
-                tracing::info!(
-                    fingerprint_hash = &fingerprint_hash[..8],
-                    "New device fingerprint registered"
-                );
-
-                Ok(DeviceInfo {
-                    fingerprint_hash,
-                    user_ids: vec![user_id],
-                    account_count: 1,
-                    risk_score: 0,
-                    is_blocked: false,
-                })
-            } else {
-                // Unauthenticated registration - no user association
-                sqlx::query(
-                    "INSERT INTO device_fingerprints \
-                     (fingerprint_hash, user_ids, account_count, risk_score, user_agent) \
-                     VALUES ($1, $2, 0, 0, $3)",
-                )
-                .bind(&fingerprint_hash)
-                .bind(&vec![] as &Vec<Uuid>)
-                .bind(user_agent)
-                .execute(self.db.pool())
-                .await?;
-
-                tracing::info!(
-                    fingerprint_hash = &fingerprint_hash[..8],
-                    "New unauthenticated device fingerprint registered"
-                );
-
-                Ok(DeviceInfo {
-                    fingerprint_hash,
-                    user_ids: vec![],
-                    account_count: 0,
-                    risk_score: 0,
-                    is_blocked: false,
-                })
-            }
         }
+
+        sqlx::query(
+            "UPDATE device_fingerprints \
+             SET last_seen_at = NOW(), \
+                 user_agent = COALESCE($1, user_agent) \
+             WHERE fingerprint_hash = $2",
+        )
+        .bind(&user_agent)
+        .bind(&fingerprint_hash)
+        .execute(&mut *tx)
+        .await?;
+
+        tx.commit().await?;
+
+        Ok(DeviceInfo {
+            fingerprint_hash,
+            user_ids,
+            account_count,
+            risk_score,
+            is_blocked: false,
+        })
     }
 
     /// Check if device is suspicious or blocked

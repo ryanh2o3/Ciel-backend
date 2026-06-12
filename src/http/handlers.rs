@@ -29,7 +29,7 @@ fn map_invite_error(err: InviteError, context: &'static str) -> AppError {
     match err {
         InviteError::TrustScoreNotFound => {
             tracing::error!(context, "user trust score not found");
-            AppError::internal(context)
+            AppError::internal("internal server error")
         }
         InviteError::InviteLimitReached(max) => AppError::forbidden(format!(
             "Maximum invite limit reached for your trust level ({})",
@@ -37,11 +37,11 @@ fn map_invite_error(err: InviteError, context: &'static str) -> AppError {
         )),
         InviteError::CodeGenerationFailed => {
             tracing::error!(context, "failed to generate unique invite code");
-            AppError::internal(context)
+            AppError::internal("internal server error")
         }
         InviteError::Db(e) => {
             tracing::error!(error = ?e, context, "invite database error");
-            AppError::internal(context)
+            AppError::internal("internal server error")
         }
     }
 }
@@ -73,7 +73,7 @@ fn map_story_error(context: &'static str, err: StoryError) -> AppError {
         StoryError::StoryNotFound => AppError::not_found("story not found"),
         StoryError::UnknownVisibility(v) => {
             tracing::error!(visibility = %v, context, "unknown story visibility from DB");
-            AppError::internal(context)
+            AppError::internal("internal server error")
         }
         StoryError::Db(e) => {
             if matches!(&e, sqlx::Error::RowNotFound) {
@@ -85,7 +85,7 @@ fn map_story_error(context: &'static str, err: StoryError) -> AppError {
                 }
             }
             tracing::error!(error = ?e, context, "story service database error");
-            AppError::internal(context)
+            AppError::internal("internal server error")
         }
     }
 }
@@ -158,7 +158,12 @@ pub(crate) async fn health(State(state): State<AppState>) -> Json<HealthResponse
     Json(HealthResponse { status })
 }
 
-pub async fn metrics(State(state): State<AppState>) -> Result<String, AppError> {
+/// Prometheus metrics. Requires the admin token — handles, IDs and traffic
+/// patterns in here shouldn't be public.
+pub async fn metrics(
+    _admin: AdminToken,
+    State(state): State<AppState>,
+) -> Result<String, AppError> {
     Ok(state.metrics.render())
 }
 
@@ -199,7 +204,12 @@ pub async fn login(
     let tokens = service
         .login(&payload.email, &payload.password)
         .await
-        .map_err(|err| internal_err("auth.login", anyhow::Error::new(err)))?;
+        .map_err(|err| match err {
+            AuthError::Banned => {
+                AppError::forbidden("Your account has been temporarily suspended")
+            }
+            other => internal_err("auth.login", anyhow::Error::new(other)),
+        })?;
 
     match tokens {
         Some(tokens) => Ok(Json(AuthTokenResponse {
@@ -235,7 +245,12 @@ pub async fn refresh_token(
     let tokens = service
         .refresh(&payload.refresh_token)
         .await
-        .map_err(|err| internal_err("auth.refresh", anyhow::Error::new(err)))?;
+        .map_err(|err| match err {
+            AuthError::Banned => {
+                AppError::forbidden("Your account has been temporarily suspended")
+            }
+            other => internal_err("auth.refresh", anyhow::Error::new(other)),
+        })?;
 
     match tokens {
         Some(tokens) => Ok(Json(AuthTokenResponse {
@@ -363,6 +378,9 @@ pub async fn create_user(
     // H2: Basic email format validation
     {
         let email = payload.email.trim();
+        if email.len() > validation::MAX_EMAIL_LEN {
+            return Err(AppError::bad_request("email must be at most 254 characters"));
+        }
         let parts: Vec<&str> = email.split('@').collect();
         if parts.len() != 2 || parts[0].is_empty() || !parts[1].contains('.') {
             return Err(AppError::bad_request("invalid email format"));
@@ -434,6 +452,10 @@ pub async fn create_user(
                     internal_err("users.create", anyhow::Error::new(sqlx_err))
                 }
                 AuthError::Invite(message) => AppError::bad_request(message),
+                // Unreachable from signup, but the enum is shared with login/refresh.
+                AuthError::Banned => {
+                    AppError::forbidden("Your account has been temporarily suspended")
+                }
                 AuthError::Internal(err) => internal_err("users.create", err),
             }
         })?;
@@ -484,8 +506,13 @@ pub async fn update_profile(
     }
 
     let service = UserService::new(state.db.clone());
+    let previous = service
+        .get_user(id)
+        .await
+        .map_err(|err| internal_err_user("users.update_profile.fetch", id, err))?;
+
     let user = service
-        .update_profile(id, payload.display_name, payload.bio, payload.avatar_key)
+        .update_profile(id, payload.display_name, payload.bio, payload.avatar_key.clone())
         .await
         .map_err(|err| internal_err_user("users.update_profile", id, err))?;
 
@@ -498,6 +525,17 @@ pub async fn update_profile(
                 state.queue.clone(),
                 state.s3_public_endpoint.clone(),
             );
+            if let Some(prev) = previous {
+                if let Some(old_key) = prev.avatar_key {
+                    let changed = payload
+                        .avatar_key
+                        .as_ref()
+                        .is_some_and(|new_key| new_key != &old_key);
+                    if changed {
+                        media_svc.invalidate_presigned_cache(&old_key).await;
+                    }
+                }
+            }
             media_svc.populate_user_avatar_url(&mut user).await;
             Ok(Json(user))
         }
@@ -595,9 +633,65 @@ pub async fn follow_user(
             metrics::counter!("notifications_dropped_total").increment(1);
             tracing::warn!("notification queue full; dropped user_followed");
         }
+
+        // The followee earns trust for gaining a follower (best-effort).
+        let trust = crate::app::trust::TrustService::new(state.db.clone());
+        if let Err(err) = trust.record_activity(id, "follower_gained").await {
+            tracing::warn!(error = ?err, user_id = %id, "failed to record follower_gained activity");
+        }
+
+        invalidate_viewer_feeds(&state, auth.user_id).await;
     }
 
     Ok(Json(FollowResponse { followed }))
+}
+
+/// Drop the viewer's cached home and stories feeds after a follow-graph or
+/// block-list change so the next read reflects it immediately instead of
+/// waiting out the cache TTL.
+async fn invalidate_viewer_feeds(state: &AppState, user_id: Uuid) {
+    let feed_service = FeedService::new(state.db.clone(), state.cache.clone());
+    if let Err(err) = feed_service.refresh_home_feed(user_id).await {
+        tracing::warn!(error = ?err, user_id = %user_id, "failed to invalidate home feed cache");
+    }
+    let story_service =
+        crate::app::stories::StoryService::new(state.db.clone(), state.cache.clone());
+    story_service.invalidate_stories_feed(user_id).await;
+}
+
+/// Invalidate follower caches after new content is published. Best-effort —
+/// a miss just means followers see stale data until the TTL expires.
+async fn invalidate_followers_feeds(
+    state: &AppState,
+    author_id: Uuid,
+    invalidate_home: bool,
+    invalidate_stories: bool,
+) {
+    let social = SocialService::new(state.db.clone());
+    let follower_ids = match social.list_follower_ids(author_id).await {
+        Ok(ids) => ids,
+        Err(err) => {
+            tracing::warn!(error = ?err, author_id = %author_id, "failed to list followers for cache invalidation");
+            return;
+        }
+    };
+
+    let feed_service = FeedService::new(state.db.clone(), state.cache.clone());
+    let story_service =
+        crate::app::stories::StoryService::new(state.db.clone(), state.cache.clone());
+
+    for follower_id in follower_ids {
+        if invalidate_home {
+            if let Err(err) = feed_service.refresh_home_feed(follower_id).await {
+                tracing::warn!(error = ?err, follower_id = %follower_id, "failed to invalidate follower home feed cache");
+            }
+        }
+        if invalidate_stories {
+            story_service.invalidate_stories_feed(follower_id).await;
+        }
+    }
+
+    invalidate_viewer_feeds(state, author_id).await;
 }
 
 #[derive(Serialize)]
@@ -619,6 +713,10 @@ pub async fn unfollow_user(
         tracing::error!(error = ?err, follower_id = %auth.user_id, followee_id = %id, "failed to unfollow user");
         AppError::internal("failed to unfollow user")
     })?;
+
+    if unfollowed {
+        invalidate_viewer_feeds(&state, auth.user_id).await;
+    }
 
     Ok(Json(UnfollowResponse { unfollowed }))
 }
@@ -643,6 +741,10 @@ pub async fn block_user(
         AppError::internal("failed to block user")
     })?;
 
+    if blocked {
+        invalidate_viewer_feeds(&state, auth.user_id).await;
+    }
+
     Ok(Json(BlockResponse { blocked }))
 }
 
@@ -665,6 +767,10 @@ pub async fn unblock_user(
         tracing::error!(error = ?err, blocker_id = %auth.user_id, blocked_id = %id, "failed to unblock user");
         AppError::internal("failed to unblock user")
     })?;
+
+    if unblocked {
+        invalidate_viewer_feeds(&state, auth.user_id).await;
+    }
 
     Ok(Json(UnblockResponse { unblocked }))
 }
@@ -845,10 +951,14 @@ pub async fn create_post(
             }
         })?;
 
-    // H5: Invalidate poster's own home feed cache
-    let feed_service = FeedService::new(state.db.clone(), state.cache.clone());
-    if let Err(err) = feed_service.refresh_home_feed(auth.user_id).await {
-        tracing::warn!(error = ?err, user_id = %auth.user_id, "failed to invalidate feed cache after post creation");
+    // Invalidate poster + followers' home feed caches so the new post appears
+    // on the next read instead of waiting out the 30s TTL.
+    invalidate_followers_feeds(&state, auth.user_id, true, false).await;
+
+    // Best-effort trust activity (drives trust level promotion)
+    let trust = crate::app::trust::TrustService::new(state.db.clone());
+    if let Err(err) = trust.record_activity(auth.user_id, "post_created").await {
+        tracing::warn!(error = ?err, user_id = %auth.user_id, "failed to record post_created activity");
     }
 
     let media_svc = MediaService::new(
@@ -952,11 +1062,33 @@ pub async fn delete_post(
     }
 }
 
+/// 404 unless the post exists and is visible to the viewer. Engagement
+/// endpoints previously skipped this, letting users like/comment on (and
+/// enumerate) followers-only posts and posts from people who blocked them.
+async fn ensure_post_visible(
+    state: &AppState,
+    post_id: Uuid,
+    viewer_id: Uuid,
+) -> Result<(), AppError> {
+    let service = PostService::new(state.db.clone());
+    let visible = service
+        .can_view_post(post_id, viewer_id)
+        .await
+        .map_err(|err| map_post_error("posts.can_view", err))?;
+    if visible {
+        Ok(())
+    } else {
+        Err(AppError::not_found("post not found"))
+    }
+}
+
 pub async fn like_post(
     Path(id): Path<Uuid>,
     auth: AuthUser,
     State(state): State<AppState>,
 ) -> Result<Json<LikeResponse>, AppError> {
+    ensure_post_visible(&state, id, auth.user_id).await?;
+
     let service = EngagementService::new(state.db.clone());
     let like = service
         .like_post(auth.user_id, id)
@@ -967,6 +1099,19 @@ pub async fn like_post(
         })?;
 
     if like.is_some() {
+        if let Ok(Some(owner_id)) = sqlx::query_scalar(
+            "SELECT owner_id FROM posts WHERE id = $1",
+        )
+        .bind(id)
+        .fetch_optional(state.db.pool())
+        .await
+        {
+            let trust = crate::app::trust::TrustService::new(state.db.clone());
+            if let Err(err) = trust.record_activity(owner_id, "like_received").await {
+                tracing::warn!(error = ?err, owner_id = %owner_id, "failed to record like_received activity");
+            }
+        }
+
         let job = NotificationJob::PostLiked {
             post_id: id,
             actor_id: auth.user_id,
@@ -1005,6 +1150,7 @@ pub async fn unlike_post(
 
 pub async fn list_post_likes(
     Path(id): Path<Uuid>,
+    auth: AuthUser,
     State(state): State<AppState>,
     Query(query): Query<PaginationQuery>,
 ) -> Result<Json<ListResponse<crate::domain::engagement::Like>>, AppError> {
@@ -1013,6 +1159,7 @@ pub async fn list_post_likes(
         return Err(AppError::bad_request("limit must be between 1 and 200"));
     }
     let cursor = parse_cursor(query.cursor)?;
+    ensure_post_visible(&state, id, auth.user_id).await?;
 
     let service = EngagementService::new(state.db.clone());
     let mut likes = service
@@ -1059,6 +1206,7 @@ pub async fn comment_post(
     if payload.body.chars().count() > MAX_COMMENT_LEN {
         return Err(AppError::bad_request("comment body exceeds 1000 characters"));
     }
+    ensure_post_visible(&state, id, auth.user_id).await?;
 
     let comment_body = payload.body.clone();
     let service = EngagementService::new(state.db.clone());
@@ -1083,11 +1231,17 @@ pub async fn comment_post(
         }
     }
 
+    let trust = crate::app::trust::TrustService::new(state.db.clone());
+    if let Err(err) = trust.record_activity(auth.user_id, "comment_created").await {
+        tracing::warn!(error = ?err, user_id = %auth.user_id, "failed to record comment_created activity");
+    }
+
     Ok(Json(comment))
 }
 
 pub async fn list_post_comments(
     Path(id): Path<Uuid>,
+    auth: AuthUser,
     State(state): State<AppState>,
     Query(query): Query<PaginationQuery>,
 ) -> Result<Json<ListResponse<crate::domain::engagement::Comment>>, AppError> {
@@ -1096,6 +1250,7 @@ pub async fn list_post_comments(
         return Err(AppError::bad_request("limit must be between 1 and 200"));
     }
     let cursor = parse_cursor(query.cursor)?;
+    ensure_post_visible(&state, id, auth.user_id).await?;
 
     let service = EngagementService::new(state.db.clone());
     let mut comments = service
@@ -1307,6 +1462,17 @@ pub async fn delete_media(
         .delete_media(id, auth.user_id)
         .await
         .map_err(|err| {
+            // 23503: media is still referenced by a post or story (RESTRICT FK)
+            if let Some(db_err) = err
+                .downcast_ref::<sqlx::Error>()
+                .and_then(|e| e.as_database_error())
+            {
+                if db_err.code().as_deref() == Some("23503") {
+                    return AppError::conflict(
+                        "media is attached to a post or story and cannot be deleted",
+                    );
+                }
+            }
             tracing::error!(error = ?err, media_id = %id, user_id = %auth.user_id, "failed to delete media");
             AppError::internal("failed to delete media")
         })?;
@@ -1382,14 +1548,39 @@ pub async fn flag_user(
     State(state): State<AppState>,
     Json(payload): Json<ModerationRequest>,
 ) -> Result<Json<crate::domain::moderation::UserFlag>, AppError> {
+    if auth.user_id == id {
+        return Err(AppError::bad_request("cannot report yourself"));
+    }
+
     let service = ModerationService::new(state.db.clone());
     let flag = service
         .flag_user(auth.user_id, id, payload.reason)
         .await
         .map_err(|err| {
+            if let Some(db_err) = err
+                .downcast_ref::<sqlx::Error>()
+                .and_then(|e| e.as_database_error())
+            {
+                match db_err.code().as_deref() {
+                    // Unique (reporter, target) — repeat reports can't be used
+                    // to repeatedly drain the target's trust score.
+                    Some("23505") => {
+                        return AppError::conflict("you have already reported this user")
+                    }
+                    Some("23503") => return AppError::not_found("user not found"),
+                    _ => {}
+                }
+            }
             tracing::error!(error = ?err, reporter_id = %auth.user_id, target_id = %id, "failed to flag user");
             AppError::internal("failed to flag user")
         })?;
+
+    // Feed the flag into the trust system (best-effort; the report itself is
+    // already recorded).
+    let trust = crate::app::trust::TrustService::new(state.db.clone());
+    if let Err(err) = trust.record_flag(id).await {
+        tracing::warn!(error = ?err, target_id = %id, "failed to record flag in trust system");
+    }
 
     Ok(Json(flag))
 }
@@ -1403,7 +1594,7 @@ pub async fn takedown_post(
 ) -> Result<StatusCode, AppError> {
     let actor_id = auth.map(|a| a.user_id);
     let service = ModerationService::new(state.db.clone());
-    let removed = service
+    let owner_id = service
         .takedown_post(actor_id, id, payload.reason)
         .await
         .map_err(|err| {
@@ -1411,7 +1602,11 @@ pub async fn takedown_post(
             AppError::internal("failed to takedown post")
         })?;
 
-    if removed {
+    if let Some(owner_id) = owner_id {
+        let trust = crate::app::trust::TrustService::new(state.db.clone());
+        if let Err(err) = trust.record_activity(owner_id, "content_removed").await {
+            tracing::warn!(error = ?err, user_id = %owner_id, "failed to record content_removed activity");
+        }
         Ok(StatusCode::NO_CONTENT)
     } else {
         Err(AppError::not_found("post not found"))
@@ -1427,7 +1622,7 @@ pub async fn takedown_comment(
 ) -> Result<StatusCode, AppError> {
     let actor_id = auth.map(|a| a.user_id);
     let service = ModerationService::new(state.db.clone());
-    let removed = service
+    let owner_id = service
         .takedown_comment(actor_id, id, payload.reason)
         .await
         .map_err(|err| {
@@ -1435,7 +1630,11 @@ pub async fn takedown_comment(
             AppError::internal("failed to takedown comment")
         })?;
 
-    if removed {
+    if let Some(owner_id) = owner_id {
+        let trust = crate::app::trust::TrustService::new(state.db.clone());
+        if let Err(err) = trust.record_activity(owner_id, "content_removed").await {
+            tracing::warn!(error = ?err, user_id = %owner_id, "failed to record content_removed activity");
+        }
         Ok(StatusCode::NO_CONTENT)
     } else {
         Err(AppError::not_found("comment not found"))
@@ -1490,6 +1689,9 @@ pub async fn search_users(
     if term.len() < 2 {
         return Err(AppError::bad_request("q must be at least 2 characters"));
     }
+    if term.len() > validation::MAX_SEARCH_QUERY_LEN {
+        return Err(AppError::bad_request("q must be at most 100 characters"));
+    }
     let limit = query.limit.unwrap_or(30);
     if !(1..=200).contains(&limit) {
         return Err(AppError::bad_request("limit must be between 1 and 200"));
@@ -1536,6 +1738,9 @@ pub async fn search_posts(
     let term = query.q.trim();
     if term.len() < 2 {
         return Err(AppError::bad_request("q must be at least 2 characters"));
+    }
+    if term.len() > validation::MAX_SEARCH_QUERY_LEN {
+        return Err(AppError::bad_request("q must be at most 100 characters"));
     }
     let limit = query.limit.unwrap_or(30);
     if !(1..=200).contains(&limit) {
@@ -1672,27 +1877,45 @@ pub async fn get_rate_limits(
     let remaining_posts = rate_limiter
         .get_remaining(auth.user_id, "post", trust_level)
         .await
-        .unwrap_or(0);
+        .map_err(|err| {
+            tracing::error!(error = ?err, user_id = %auth.user_id, "failed to read post rate limit");
+            AppError::internal("failed to read rate limits")
+        })?;
     let remaining_follows = rate_limiter
         .get_remaining(auth.user_id, "follow", trust_level)
         .await
-        .unwrap_or(0);
+        .map_err(|err| {
+            tracing::error!(error = ?err, user_id = %auth.user_id, "failed to read follow rate limit");
+            AppError::internal("failed to read rate limits")
+        })?;
     let remaining_likes = rate_limiter
         .get_remaining(auth.user_id, "like", trust_level)
         .await
-        .unwrap_or(0);
+        .map_err(|err| {
+            tracing::error!(error = ?err, user_id = %auth.user_id, "failed to read like rate limit");
+            AppError::internal("failed to read rate limits")
+        })?;
     let remaining_comments = rate_limiter
         .get_remaining(auth.user_id, "comment", trust_level)
         .await
-        .unwrap_or(0);
+        .map_err(|err| {
+            tracing::error!(error = ?err, user_id = %auth.user_id, "failed to read comment rate limit");
+            AppError::internal("failed to read rate limits")
+        })?;
     let remaining_media_read = rate_limiter
         .get_remaining(auth.user_id, "media_read", trust_level)
         .await
-        .unwrap_or(0);
+        .map_err(|err| {
+            tracing::error!(error = ?err, user_id = %auth.user_id, "failed to read media_read rate limit");
+            AppError::internal("failed to read rate limits")
+        })?;
     let remaining_media_upload = rate_limiter
         .get_remaining(auth.user_id, "media_upload", trust_level)
         .await
-        .unwrap_or(0);
+        .map_err(|err| {
+            tracing::error!(error = ?err, user_id = %auth.user_id, "failed to read media_upload rate limit");
+            AppError::internal("failed to read rate limits")
+        })?;
 
     Ok(Json(RateLimitsResponse {
         trust_level: format!("{:?}", trust_level),
@@ -1728,6 +1951,13 @@ pub async fn register_device_fingerprint(
     headers: axum::http::HeaderMap,
     Json(payload): Json<RegisterFingerprintRequest>,
 ) -> Result<StatusCode, AppError> {
+    if payload.fingerprint.trim().is_empty() {
+        return Err(AppError::bad_request("fingerprint is required"));
+    }
+    if payload.fingerprint.len() > validation::MAX_FINGERPRINT_LEN {
+        return Err(AppError::bad_request("fingerprint must be at most 512 characters"));
+    }
+
     let service = crate::app::fingerprint::FingerprintService::new(state.db.clone());
 
     let user_agent = headers
@@ -1919,7 +2149,7 @@ pub async fn admin_create_invite(
     Json(payload): Json<CreateInviteRequest>,
 ) -> Result<Json<crate::app::invites::InviteCode>, AppError> {
     let days = payload.days_valid;
-    if days < 1 || days > 365 {
+    if !(1..=365).contains(&days) {
         return Err(AppError::bad_request("days_valid must be between 1 and 365"));
     }
 
@@ -1949,6 +2179,12 @@ pub async fn create_story(
     State(state): State<AppState>,
     Json(payload): Json<CreateStoryRequest>,
 ) -> Result<Json<crate::domain::story::Story>, AppError> {
+    if let Some(caption) = &payload.caption {
+        if caption.chars().count() > validation::MAX_CAPTION_LEN {
+            return Err(AppError::bad_request("caption exceeds 2200 characters"));
+        }
+    }
+
     let service =
         crate::app::stories::StoryService::new(state.db.clone(), state.cache.clone());
     let story = service
@@ -1962,6 +2198,8 @@ pub async fn create_story(
     let mut story = story;
     media_svc.populate_story_avatar_urls(std::slice::from_mut(&mut story)).await;
     media_svc.populate_story_media(std::slice::from_mut(&mut story)).await;
+
+    invalidate_followers_feeds(&state, auth.user_id, false, true).await;
 
     Ok(Json(story))
 }
@@ -2041,6 +2279,7 @@ pub async fn delete_story(
         .map_err(|e| map_story_error("failed to delete story", e))?;
 
     if deleted {
+        invalidate_followers_feeds(&state, auth.user_id, false, true).await;
         Ok(StatusCode::NO_CONTENT)
     } else {
         Err(AppError::not_found("story not found"))
@@ -2117,6 +2356,17 @@ pub async fn add_story_reaction(
     let emoji_str = emoji.to_string();
     let service =
         crate::app::stories::StoryService::new(state.db.clone(), state.cache.clone());
+
+    // Visibility gate: get_story applies expiry, block, and visibility rules,
+    // so users can't react to stories they aren't allowed to see.
+    let visible = service
+        .get_story(id, auth.user_id)
+        .await
+        .map_err(|e| map_story_error("failed to add reaction", e))?;
+    if visible.is_none() {
+        return Err(AppError::not_found("story not found"));
+    }
+
     let reaction = service
         .add_reaction(id, auth.user_id, emoji_str.clone())
         .await
@@ -2203,6 +2453,17 @@ pub async fn mark_story_seen(
 ) -> Result<StatusCode, AppError> {
     let service =
         crate::app::stories::StoryService::new(state.db.clone(), state.cache.clone());
+
+    // Visibility gate: prevents marking arbitrary story ids as seen (which
+    // would inflate view counts on stories the viewer can't access).
+    let visible = service
+        .get_story(id, auth.user_id)
+        .await
+        .map_err(|e| map_story_error("failed to mark story seen", e))?;
+    if visible.is_none() {
+        return Err(AppError::not_found("story not found"));
+    }
+
     service
         .mark_seen(id, auth.user_id)
         .await
@@ -2278,6 +2539,9 @@ pub async fn add_story_to_highlight(
 ) -> Result<Json<crate::domain::story::StoryHighlight>, AppError> {
     if payload.highlight_name.trim().is_empty() {
         return Err(AppError::bad_request("highlight_name cannot be empty"));
+    }
+    if payload.highlight_name.chars().count() > validation::MAX_HIGHLIGHT_NAME_LEN {
+        return Err(AppError::bad_request("highlight_name must be at most 50 characters"));
     }
 
     let service =

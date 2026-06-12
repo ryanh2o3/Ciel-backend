@@ -29,7 +29,7 @@ async fn follow_user() {
 
     assert_eq!(resp.status, StatusCode::OK);
     let body = resp.json();
-    assert_eq!(body["followed"].as_bool().unwrap(), true);
+    assert!(body["followed"].as_bool().unwrap());
 }
 
 #[tokio::test]
@@ -47,7 +47,7 @@ async fn follow_already_following() {
         )
         .await;
     assert_eq!(resp.status, StatusCode::OK);
-    assert_eq!(resp.json()["followed"].as_bool().unwrap(), true);
+    assert!(resp.json()["followed"].as_bool().unwrap());
 
     // Follow again — should be idempotent
     let resp = app
@@ -58,7 +58,7 @@ async fn follow_already_following() {
         )
         .await;
     assert_eq!(resp.status, StatusCode::OK);
-    assert_eq!(resp.json()["followed"].as_bool().unwrap(), false);
+    assert!(!resp.json()["followed"].as_bool().unwrap());
 }
 
 #[tokio::test]
@@ -118,7 +118,7 @@ async fn unfollow_user() {
         .await;
 
     assert_eq!(resp.status, StatusCode::OK);
-    assert_eq!(resp.json()["unfollowed"].as_bool().unwrap(), true);
+    assert!(resp.json()["unfollowed"].as_bool().unwrap());
 }
 
 #[tokio::test]
@@ -136,7 +136,7 @@ async fn unfollow_not_following() {
         .await;
 
     assert_eq!(resp.status, StatusCode::OK);
-    assert_eq!(resp.json()["unfollowed"].as_bool().unwrap(), false);
+    assert!(!resp.json()["unfollowed"].as_bool().unwrap());
 }
 
 #[tokio::test]
@@ -237,7 +237,7 @@ async fn block_user() {
         .await;
 
     assert_eq!(resp.status, StatusCode::OK);
-    assert_eq!(resp.json()["blocked"].as_bool().unwrap(), true);
+    assert!(resp.json()["blocked"].as_bool().unwrap());
 }
 
 #[tokio::test]
@@ -254,7 +254,7 @@ async fn block_removes_follow() {
             Some(&user_a.access_token),
         )
         .await;
-    assert_eq!(resp.json()["followed"].as_bool().unwrap(), true);
+    assert!(resp.json()["followed"].as_bool().unwrap());
 
     // A blocks B — should remove the follow relationship
     app.post_json(
@@ -273,8 +273,8 @@ async fn block_removes_follow() {
         .await;
     assert_eq!(resp.status, StatusCode::OK);
     let body = resp.json();
-    assert_eq!(body["is_following"].as_bool().unwrap(), false);
-    assert_eq!(body["is_blocking"].as_bool().unwrap(), true);
+    assert!(!body["is_following"].as_bool().unwrap());
+    assert!(body["is_blocking"].as_bool().unwrap());
 }
 
 #[tokio::test]
@@ -301,7 +301,7 @@ async fn blocked_user_cannot_follow() {
         .await;
     assert_eq!(resp.status, StatusCode::OK);
     // The SQL has block check, so rows_affected = 0, meaning followed = false
-    assert_eq!(resp.json()["followed"].as_bool().unwrap(), false);
+    assert!(!resp.json()["followed"].as_bool().unwrap());
 }
 
 #[tokio::test]
@@ -345,7 +345,7 @@ async fn unblock_user() {
         .await;
 
     assert_eq!(resp.status, StatusCode::OK);
-    assert_eq!(resp.json()["unblocked"].as_bool().unwrap(), true);
+    assert!(resp.json()["unblocked"].as_bool().unwrap());
 }
 
 #[tokio::test]
@@ -371,10 +371,10 @@ async fn relationship_status() {
 
     assert_eq!(resp.status, StatusCode::OK);
     let body = resp.json();
-    assert_eq!(body["is_following"].as_bool().unwrap(), true);
-    assert_eq!(body["is_followed_by"].as_bool().unwrap(), false);
-    assert_eq!(body["is_blocking"].as_bool().unwrap(), false);
-    assert_eq!(body["is_blocked_by"].as_bool().unwrap(), false);
+    assert!(body["is_following"].as_bool().unwrap());
+    assert!(!body["is_followed_by"].as_bool().unwrap());
+    assert!(!body["is_blocking"].as_bool().unwrap());
+    assert!(!body["is_blocked_by"].as_bool().unwrap());
 }
 
 #[tokio::test]
@@ -391,10 +391,10 @@ async fn relationship_status_self() {
 
     assert_eq!(resp.status, StatusCode::OK);
     let body = resp.json();
-    assert_eq!(body["is_following"].as_bool().unwrap(), false);
-    assert_eq!(body["is_followed_by"].as_bool().unwrap(), false);
-    assert_eq!(body["is_blocking"].as_bool().unwrap(), false);
-    assert_eq!(body["is_blocked_by"].as_bool().unwrap(), false);
+    assert!(!body["is_following"].as_bool().unwrap());
+    assert!(!body["is_followed_by"].as_bool().unwrap());
+    assert!(!body["is_blocking"].as_bool().unwrap());
+    assert!(!body["is_blocked_by"].as_bool().unwrap());
 }
 
 // ===========================================================================

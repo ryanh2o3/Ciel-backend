@@ -1,5 +1,6 @@
 use anyhow::Result;
 use redis::AsyncCommands;
+use serde::{Deserialize, Serialize};
 use serde_json;
 use sqlx::Row;
 use time::OffsetDateTime;
@@ -18,6 +19,38 @@ pub struct FeedService {
 
 const FEED_CACHE_TTL_SECONDS: u64 = 30;
 
+/// Cached first page of a home feed, including the pagination cursor so a
+/// cache hit doesn't break "load more". The timestamp is stored as unix
+/// nanoseconds for a lossless round trip.
+#[derive(Serialize, Deserialize)]
+struct CachedHomeFeed {
+    posts: Vec<Post>,
+    next_cursor_nanos: Option<i128>,
+    next_cursor_id: Option<Uuid>,
+}
+
+impl CachedHomeFeed {
+    fn from_page(posts: &[Post], next_cursor: Option<(OffsetDateTime, Uuid)>) -> Self {
+        Self {
+            posts: posts.to_vec(),
+            next_cursor_nanos: next_cursor.map(|(ts, _)| ts.unix_timestamp_nanos()),
+            next_cursor_id: next_cursor.map(|(_, id)| id),
+        }
+    }
+
+    #[allow(clippy::type_complexity)]
+    fn into_page(self) -> Option<(Vec<Post>, Option<(OffsetDateTime, Uuid)>)> {
+        let next_cursor = match (self.next_cursor_nanos, self.next_cursor_id) {
+            (Some(nanos), Some(id)) => {
+                Some((OffsetDateTime::from_unix_timestamp_nanos(nanos).ok()?, id))
+            }
+            (None, None) => None,
+            _ => return None,
+        };
+        Some((self.posts, next_cursor))
+    }
+}
+
 impl FeedService {
     pub fn new(db: Db, cache: RedisCache) -> Self {
         Self { db, cache }
@@ -30,29 +63,26 @@ impl FeedService {
         limit: i64,
     ) -> Result<(Vec<Post>, Option<(OffsetDateTime, Uuid)>)> {
         // Fan-out on read: query recent posts from followed accounts and cache by user.
-        // Cache is short-lived to keep freshness while absorbing spikes.
-        let cache_key = match cursor {
-            Some((created_at, id)) => format!("feed:home:{}:{}:{}", user_id, created_at, id),
-            None => format!("feed:home:{}", user_id),
-        };
+        // Only the first page is cached — it absorbs nearly all the load, and a
+        // single key per user keeps invalidation complete and cheap.
+        let should_cache = cursor.is_none();
+        let cache_key = format!("feed:home:{}", user_id);
         let ttl = FEED_CACHE_TTL_SECONDS;
 
-        match self.cache.client().get_multiplexed_async_connection().await {
-            Ok(mut conn) => {
-                match conn.get::<_, Option<String>>(&cache_key).await {
-                    Ok(Some(payload)) => {
-                        if let Ok(posts) = serde_json::from_str::<Vec<Post>>(&payload) {
-                            return Ok((posts, None));
+        if should_cache {
+            let mut conn = self.cache.conn();
+            match conn.get::<_, Option<String>>(&cache_key).await {
+                Ok(Some(payload)) => {
+                    if let Ok(cached) = serde_json::from_str::<CachedHomeFeed>(&payload) {
+                        if let Some(page) = cached.into_page() {
+                            return Ok(page);
                         }
                     }
-                    Ok(None) => {}
-                    Err(err) => {
-                        warn!(error = ?err, "failed to read feed cache");
-                    }
                 }
-            }
-            Err(err) => {
-                warn!(error = ?err, "failed to connect to Redis for feed cache");
+                Ok(None) => {}
+                Err(err) => {
+                    warn!(error = ?err, "failed to read feed cache");
+                }
             }
         }
 
@@ -139,8 +169,11 @@ impl FeedService {
             None
         };
 
-        if let Ok(mut conn) = self.cache.client().get_multiplexed_async_connection().await {
-            if let Ok(payload) = serde_json::to_string(&posts) {
+        if should_cache {
+            let mut conn = self.cache.conn();
+            if let Ok(payload) =
+                serde_json::to_string(&CachedHomeFeed::from_page(&posts, next_cursor))
+            {
                 if let Err(err) = conn.set_ex::<_, _, ()>(&cache_key, payload, ttl).await {
                     warn!(error = ?err, "failed to write feed cache");
                 }
@@ -152,8 +185,9 @@ impl FeedService {
 
     pub async fn refresh_home_feed(&self, user_id: Uuid) -> Result<()> {
         let cache_key = format!("feed:home:{}", user_id);
-        if let Ok(mut conn) = self.cache.client().get_multiplexed_async_connection().await {
-            let _ = conn.del::<_, ()>(&cache_key).await;
+        let mut conn = self.cache.conn();
+        if let Err(err) = conn.del::<_, ()>(&cache_key).await {
+            warn!(error = ?err, user_id = %user_id, "failed to invalidate feed cache");
         }
         Ok(())
     }

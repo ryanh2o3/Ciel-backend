@@ -44,8 +44,14 @@ impl EngagementService {
         body: String,
     ) -> Result<Comment> {
         let row = sqlx::query(
-            "INSERT INTO comments (user_id, post_id, body) VALUES ($1, $2, $3) \
-             RETURNING id, user_id, post_id, body, created_at",
+            "WITH inserted AS ( \
+                INSERT INTO comments (user_id, post_id, body) VALUES ($1, $2, $3) \
+                RETURNING id, user_id, post_id, body, created_at \
+             ) \
+             SELECT i.id, i.user_id, i.post_id, i.body, i.created_at, \
+                    u.handle AS user_handle, u.display_name AS user_display_name \
+             FROM inserted i \
+             JOIN users u ON u.id = i.user_id",
         )
         .bind(user_id)
         .bind(post_id)
@@ -59,6 +65,8 @@ impl EngagementService {
             post_id: row.get("post_id"),
             body: row.get("body"),
             created_at: row.get("created_at"),
+            user_handle: Some(row.get("user_handle")),
+            user_display_name: Some(row.get("user_display_name")),
         })
     }
 
@@ -132,11 +140,13 @@ impl EngagementService {
         let rows = match cursor {
             Some((created_at, comment_id)) => {
                 sqlx::query(
-                    "SELECT id, user_id, post_id, body, created_at \
-                     FROM comments \
-                     WHERE post_id = $1 \
-                       AND (created_at < $2 OR (created_at = $2 AND id < $3)) \
-                     ORDER BY created_at DESC, id DESC \
+                    "SELECT c.id, c.user_id, c.post_id, c.body, c.created_at, \
+                            u.handle AS user_handle, u.display_name AS user_display_name \
+                     FROM comments c \
+                     JOIN users u ON u.id = c.user_id \
+                     WHERE c.post_id = $1 \
+                       AND (c.created_at < $2 OR (c.created_at = $2 AND c.id < $3)) \
+                     ORDER BY c.created_at DESC, c.id DESC \
                      LIMIT $4",
                 )
                 .bind(post_id)
@@ -148,10 +158,12 @@ impl EngagementService {
             }
             None => {
                 sqlx::query(
-                    "SELECT id, user_id, post_id, body, created_at \
-                     FROM comments \
-                     WHERE post_id = $1 \
-                     ORDER BY created_at DESC, id DESC \
+                    "SELECT c.id, c.user_id, c.post_id, c.body, c.created_at, \
+                            u.handle AS user_handle, u.display_name AS user_display_name \
+                     FROM comments c \
+                     JOIN users u ON u.id = c.user_id \
+                     WHERE c.post_id = $1 \
+                     ORDER BY c.created_at DESC, c.id DESC \
                      LIMIT $2",
                 )
                 .bind(post_id)
@@ -169,6 +181,8 @@ impl EngagementService {
                 post_id: row.get("post_id"),
                 body: row.get("body"),
                 created_at: row.get("created_at"),
+                user_handle: Some(row.get("user_handle")),
+                user_display_name: Some(row.get("user_display_name")),
             });
         }
 

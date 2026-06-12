@@ -29,7 +29,7 @@ async fn create_invite() {
     let body = resp.json();
     assert!(body["code"].is_string());
     assert_eq!(body["created_by"].as_str().unwrap(), user.id.to_string());
-    assert_eq!(body["is_valid"].as_bool().unwrap(), true);
+    assert!(body["is_valid"].as_bool().unwrap());
 }
 
 #[tokio::test]
@@ -108,7 +108,7 @@ async fn list_invites() {
     assert_eq!(resp.status, StatusCode::OK);
     let body = resp.json();
     let invites = body.as_array().unwrap();
-    assert!(invites.len() >= 1);
+    assert!(!invites.is_empty());
 }
 
 #[tokio::test]
@@ -235,7 +235,7 @@ async fn get_trust_score() {
     assert!(body["trust_level"].is_number());
     assert!(body["trust_level_name"].is_string());
     assert!(body["trust_points"].is_number());
-    assert_eq!(body["is_banned"].as_bool().unwrap(), false);
+    assert!(!body["is_banned"].as_bool().unwrap());
 }
 
 #[tokio::test]
@@ -349,7 +349,7 @@ async fn list_user_devices() {
     assert_eq!(resp.status, StatusCode::OK);
     let body = resp.json();
     let devices = body.as_array().unwrap();
-    assert!(devices.len() >= 1);
+    assert!(!devices.is_empty());
     assert!(devices[0]["fingerprint_hash"].is_string());
     assert!(devices[0]["risk_score"].is_number());
     assert!(devices[0]["is_blocked"].is_boolean());

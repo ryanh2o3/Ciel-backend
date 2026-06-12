@@ -78,6 +78,13 @@ write_files:
           depends_on:
             - api
 
+%{ if migration_database_url != "" ~}
+  - path: /opt/ciel/migration_db_url.txt
+    permissions: '0600'
+    content: |
+      ${migration_database_url}
+
+%{ endif ~}
   - path: /opt/ciel/nginx.conf
     content: |
       events {}
@@ -116,9 +123,49 @@ runcmd:
   # Login to Scaleway Container Registry using scoped IAM key
   - echo "${scw_secret_key}" | docker login rg.${scw_region}.scw.cloud -u ${scw_access_key} --password-stdin
 
-  # Pull and start the application
+  # Pull the application image
   - cd /opt/ciel && docker compose pull
+
+%{ if migration_database_url != "" ~}
+  # Run database migrations BEFORE the API starts so it never serves against
+  # a missing or outdated schema. ON_ERROR_STOP aborts on the first failed
+  # statement (all migrations are idempotent); the advisory lock serializes
+  # concurrent runs from multiple instances booting at the same time. On
+  # success a marker file gates the compose up step below.
+  - |
+    set -e
+    docker create --name tmp-migrate ${container_image}:${image_tag}
+    docker cp tmp-migrate:/app/migrations /opt/ciel/migrations
+    docker rm tmp-migrate
+    MIGRATION_URL=$(cat /opt/ciel/migration_db_url.txt)
+    docker run --rm --network=host \
+      -v /opt/ciel/migrations:/migrations:ro \
+      -e "DATABASE_URL=$MIGRATION_URL" \
+      postgres:16-alpine \
+      sh -ec '
+        files=""
+        for f in $(ls /migrations/*.sql | sort); do
+          echo "Queueing $f"
+          files="$files -f $f"
+        done
+        psql "$DATABASE_URL" -v ON_ERROR_STOP=1 \
+          -c "SELECT pg_advisory_lock(728132)" \
+          $files \
+          -c "GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO ${db_user};" \
+          -c "GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO ${db_user};" \
+          -c "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO ${db_user};" \
+          -c "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO ${db_user};"
+      '
+    rm -f /opt/ciel/migration_db_url.txt
+    touch /opt/ciel/.migrations-ok
+    echo "=== MIGRATIONS COMPLETE ==="
+
+  # Start the application only if migrations succeeded
+  - test -f /opt/ciel/.migrations-ok && cd /opt/ciel && docker compose up -d
+%{ else ~}
+  # Start the application (migrations are handled elsewhere for this deployment)
   - cd /opt/ciel && docker compose up -d
+%{ endif ~}
 
   # Enable Docker to start on boot
   - systemctl enable docker

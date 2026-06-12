@@ -20,6 +20,8 @@ on:
       - "Cargo.lock"
       - ".github/workflows/test.yml"
   workflow_dispatch:
+  # Allows the deploy workflow to run this as a gating job
+  workflow_call:
 
 env:
   CARGO_TERM_COLOR: always
@@ -27,13 +29,15 @@ env:
 
 jobs:
   check:
-    name: Compile Check
+    name: Compile Check & Lint
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
 
       - name: Cache cargo registry & build
         uses: actions/cache@v4
@@ -47,6 +51,9 @@ jobs:
 
       - name: cargo check
         run: cargo check --all-targets
+
+      - name: cargo clippy
+        run: cargo clippy --all-targets -- -D warnings
 
   test:
     name: Integration Tests

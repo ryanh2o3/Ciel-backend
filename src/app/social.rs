@@ -41,6 +41,18 @@ impl SocialService {
         Self { db }
     }
 
+    /// Follower IDs for a user — used to invalidate follower feed caches after
+    /// new content is published.
+    pub async fn list_follower_ids(&self, followee_id: Uuid) -> Result<Vec<Uuid>> {
+        let ids = sqlx::query_scalar(
+            "SELECT follower_id FROM follows WHERE followee_id = $1",
+        )
+        .bind(followee_id)
+        .fetch_all(self.db.pool())
+        .await?;
+        Ok(ids)
+    }
+
     pub async fn follow(&self, follower_id: Uuid, followee_id: Uuid) -> Result<bool, SocialError> {
         const MAX_FOLLOWERS: i64 = 5000;
 

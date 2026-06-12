@@ -131,7 +131,7 @@ impl TestApp {
             .filter(|e| {
                 e.path()
                     .extension()
-                    .map_or(false, |ext| ext == "sql")
+                    .is_some_and(|ext| ext == "sql")
             })
             .collect();
         migration_files.sort_by_key(|e| e.file_name());

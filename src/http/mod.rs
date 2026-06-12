@@ -131,9 +131,13 @@ pub fn router(state: AppState) -> Router {
                     middleware::ban::ban_check_middleware,
                 ))
         )
-        // Add safety routes
+        // Add safety routes (IP rate limiting for unauthenticated fingerprint spam)
         .merge(
             routes::safety()
+                .layer(axum_middleware::from_fn_with_state(
+                    state.clone(),
+                    middleware::rate_limit::ip_rate_limit_middleware,
+                ))
                 .layer(axum_middleware::from_fn_with_state(
                     state.clone(),
                     middleware::ban::ban_check_middleware,

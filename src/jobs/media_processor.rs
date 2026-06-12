@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 use sqlx::Row;
 use std::io::Cursor;
 use std::time::Duration;
+use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 use tracing::{error, info, warn};
 
@@ -28,6 +29,10 @@ const ERROR_BACKOFF_MS: u64 = 1000;
 const THUMB_MAX_PX: u32 = 200;
 const MEDIUM_MAX_PX: u32 = 800;
 
+/// Decompression-bomb guard: reject images whose decoded dimensions exceed
+/// this, regardless of how small the compressed payload is.
+const MAX_IMAGE_DIMENSION_PX: u32 = 12_000;
+
 enum ProcessingOutcome {
     Completed,
     RetryLater,
@@ -41,10 +46,23 @@ fn is_permanent_error(err: &anyhow::Error) -> bool {
         || msg.contains("unsupported content type")
 }
 
-pub async fn run(db: Db, storage: ObjectStorage, queue: QueueClient) -> Result<()> {
+pub async fn run(
+    db: Db,
+    storage: ObjectStorage,
+    queue: QueueClient,
+    shutdown: CancellationToken,
+) -> Result<()> {
     info!("media processor started");
     loop {
-        match queue.receive_media_job(POLL_WAIT_SECONDS).await {
+        let received = tokio::select! {
+            _ = shutdown.cancelled() => {
+                info!("media processor stopping");
+                return Ok(());
+            }
+            received = queue.receive_media_job(POLL_WAIT_SECONDS) => received,
+        };
+
+        match received {
             Ok(Some(message)) => {
                 let outcome = match process_job(&db, &storage, &message.job).await {
                     Ok(outcome) => outcome,
@@ -90,10 +108,14 @@ async fn process_job(
     storage: &ObjectStorage,
     job: &MediaJob,
 ) -> Result<ProcessingOutcome> {
+    // Claim the job. Accepting redeliveries in 'processing' state is what lets
+    // an upload recover after a transient mid-processing failure — previously
+    // it would stay 'processing' forever. Processing is idempotent: variant
+    // keys are deterministic and the final DB writes happen in one transaction.
     let row = sqlx::query(
         "UPDATE media_uploads \
          SET status = 'processing' \
-         WHERE id = $1 AND owner_id = $2 AND status = 'uploaded' \
+         WHERE id = $1 AND owner_id = $2 AND status IN ('uploaded', 'processing') \
          RETURNING original_key, content_type, bytes",
     )
     .bind(job.upload_id)
@@ -108,21 +130,9 @@ async fn process_job(
             row.get::<i64, _>("bytes"),
         ),
         None => {
-            let status_row = sqlx::query(
-                "SELECT status::text AS status FROM media_uploads WHERE id = $1 AND owner_id = $2",
-            )
-            .bind(job.upload_id)
-            .bind(job.owner_id)
-            .fetch_optional(db.pool())
-            .await?;
-
-            if let Some(status_row) = status_row {
-                let status: String = status_row.get("status");
-                if status == "completed" {
-                    return Ok(ProcessingOutcome::Completed);
-                }
-            }
-            return Ok(ProcessingOutcome::RetryLater);
+            // Already completed/failed, or the upload row no longer exists.
+            // In every case the message is stale and should be consumed.
+            return Ok(ProcessingOutcome::Completed);
         }
     };
 
@@ -135,22 +145,31 @@ async fn process_job(
         .await?;
 
     let data = object.body.collect().await?.into_bytes();
-    let image = image::load_from_memory(&data)
-        .map_err(|err| anyhow!("failed to decode image: {}", err))?;
-    let (width, height) = image.dimensions();
+    let output_format = image_format_from_content_type(&content_type)?;
+
+    // Decode + resize is CPU-bound (can take hundreds of ms for large photos);
+    // run it on the blocking pool so it doesn't stall the async runtime.
+    let (width, height, thumb_data, medium_data) =
+        tokio::task::spawn_blocking(move || -> Result<(u32, u32, Vec<u8>, Vec<u8>)> {
+            let image = decode_image(&data)?;
+            let (width, height) = image.dimensions();
+            let thumb = resize_and_encode(&image, THUMB_MAX_PX, output_format)?;
+            let medium = resize_and_encode(&image, MEDIUM_MAX_PX, output_format)?;
+            Ok((width, height, thumb, medium))
+        })
+        .await
+        .map_err(|err| anyhow!("image processing task failed: {}", err))??;
 
     let ext = extension_from_content_type(&content_type)?;
-    let output_format = image_format_from_content_type(&content_type)?;
     let thumb_key = format!("media/{}/{}/thumb.{}", job.owner_id, job.upload_id, ext);
     let medium_key = format!("media/{}/{}/medium.{}", job.owner_id, job.upload_id, ext);
-
-    // C5: Resize for thumb and medium variants
-    let thumb_data = resize_and_encode(&image, THUMB_MAX_PX, output_format)?;
-    let medium_data = resize_and_encode(&image, MEDIUM_MAX_PX, output_format)?;
 
     upload_variant(storage, &thumb_key, &content_type, thumb_data.into()).await?;
     upload_variant(storage, &medium_key, &content_type, medium_data.into()).await?;
 
+    // Insert media + flip status atomically so a crash between the two can't
+    // leave an orphaned media row that a redelivery would duplicate.
+    let mut tx = db.pool().begin().await?;
     let media_id = Uuid::new_v4();
     sqlx::query(
         "INSERT INTO media (id, owner_id, original_key, thumb_key, medium_key, width, height, bytes) \
@@ -164,7 +183,7 @@ async fn process_job(
     .bind(width as i32)
     .bind(height as i32)
     .bind(bytes)
-    .execute(db.pool())
+    .execute(&mut *tx)
     .await?;
 
     sqlx::query(
@@ -175,11 +194,32 @@ async fn process_job(
     .bind(media_id)
     .bind(job.upload_id)
     .bind(job.owner_id)
-    .execute(db.pool())
+    .execute(&mut *tx)
     .await?;
+
+    tx.commit().await?;
 
     info!(upload_id = %job.upload_id, media_id = %media_id, "media processing completed");
     Ok(ProcessingOutcome::Completed)
+}
+
+/// Decode with explicit dimension limits so a crafted tiny file that inflates
+/// to a gigantic bitmap (decompression bomb) is rejected instead of taking
+/// down the worker. Limit errors surface as "failed to decode image", which
+/// `is_permanent_error` treats as non-retryable.
+fn decode_image(data: &[u8]) -> Result<image::DynamicImage> {
+    let mut reader = image::ImageReader::new(Cursor::new(data))
+        .with_guessed_format()
+        .map_err(|err| anyhow!("failed to decode image: {}", err))?;
+
+    let mut limits = image::Limits::default();
+    limits.max_image_width = Some(MAX_IMAGE_DIMENSION_PX);
+    limits.max_image_height = Some(MAX_IMAGE_DIMENSION_PX);
+    reader.limits(limits);
+
+    reader
+        .decode()
+        .map_err(|err| anyhow!("failed to decode image: {}", err))
 }
 
 /// Resize image so the longest side is at most `max_px`, preserving aspect ratio.

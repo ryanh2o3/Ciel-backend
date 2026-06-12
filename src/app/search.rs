@@ -90,7 +90,7 @@ impl SearchService {
                             COALESCE(ARRAY(SELECT pm.media_id FROM post_media pm WHERE pm.post_id = p.id ORDER BY pm.position), ARRAY[]::uuid[]) AS media_ids, \
                             p.caption, p.visibility::text AS visibility, p.created_at \
                      FROM posts p \
-                     JOIN users u ON p.owner_id = u.id \
+                     JOIN users u ON p.owner_id = u.id AND u.deleted_at IS NULL \
                      WHERE p.visibility = 'public' \
                        AND p.caption ILIKE $1 ESCAPE '\\' \
                        AND (p.created_at < $2 OR (p.created_at = $2 AND p.id < $3)) \
@@ -111,7 +111,7 @@ impl SearchService {
                             COALESCE(ARRAY(SELECT pm.media_id FROM post_media pm WHERE pm.post_id = p.id ORDER BY pm.position), ARRAY[]::uuid[]) AS media_ids, \
                             p.caption, p.visibility::text AS visibility, p.created_at \
                      FROM posts p \
-                     JOIN users u ON p.owner_id = u.id \
+                     JOIN users u ON p.owner_id = u.id AND u.deleted_at IS NULL \
                      WHERE p.visibility = 'public' AND p.caption ILIKE $1 ESCAPE '\\' \
                      ORDER BY p.created_at DESC, p.id DESC \
                      LIMIT $2",

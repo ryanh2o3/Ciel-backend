@@ -149,13 +149,109 @@ impl TrustService {
     /// Recalculate trust level based on metrics
     #[allow(dead_code)]
     pub async fn recalculate_trust_level(&self, user_id: Uuid) -> Result<()> {
+        let mut tx = self.db.pool().begin().await?;
+        self.recalculate_trust_level_with_tx(user_id, &mut tx).await?;
+        tx.commit().await?;
+        Ok(())
+    }
+
+    /// Check if user is currently banned
+    pub async fn is_banned(&self, user_id: Uuid) -> Result<bool> {
+        let row = sqlx::query(
+            "SELECT banned_until FROM user_trust_scores WHERE user_id = $1",
+        )
+        .bind(user_id)
+        .fetch_optional(self.db.pool())
+        .await?;
+
+        if let Some(row) = row {
+            if let Some(banned_until) = row.get::<Option<OffsetDateTime>, _>("banned_until") {
+                return Ok(banned_until > OffsetDateTime::now_utc());
+            }
+        }
+
+        Ok(false)
+    }
+
+    /// Add strike to user (3 strikes = temporary ban)
+    #[allow(dead_code)]
+    pub async fn add_strike(&self, user_id: Uuid, reason: &str) -> Result<i32> {
+        let mut tx = self.db.pool().begin().await?;
+        let strikes = self
+            .add_strike_with_tx(user_id, reason, &mut tx)
+            .await?;
+        tx.commit().await?;
+        Ok(strikes)
+    }
+
+    async fn add_strike_with_tx(
+        &self,
+        user_id: Uuid,
+        reason: &str,
+        tx: &mut Transaction<'_, Postgres>,
+    ) -> Result<i32> {
+        let result = sqlx::query(
+            "UPDATE user_trust_scores \
+             SET strikes = strikes + 1, \
+                 flags_received = flags_received + 1, \
+                 trust_points = GREATEST(0, trust_points - 50), \
+                 updated_at = NOW() \
+             WHERE user_id = $1 \
+             RETURNING strikes",
+        )
+        .bind(user_id)
+        .fetch_one(&mut **tx)
+        .await?;
+
+        let strikes: i32 = result.get("strikes");
+
+        // Auto-ban after 3 strikes with escalating duration
+        if strikes >= 3 {
+            let ban_duration_days = match strikes {
+                3 => 7,    // 1 week
+                4 => 30,   // 1 month
+                _ => 365,  // 1 year
+            };
+
+            let ban_until = OffsetDateTime::now_utc() + time::Duration::days(ban_duration_days);
+
+            sqlx::query(
+                "UPDATE user_trust_scores \
+                 SET banned_until = $1, \
+                     trust_level = 0, \
+                     updated_at = NOW() \
+                 WHERE user_id = $2",
+            )
+            .bind(ban_until)
+            .bind(user_id)
+            .execute(&mut **tx)
+            .await?;
+
+            tracing::warn!(
+                user_id = %user_id,
+                strikes = strikes,
+                ban_until = %ban_until,
+                reason = reason,
+                "User automatically banned due to strikes"
+            );
+        }
+
+        self.recalculate_trust_level_with_tx(user_id, tx).await?;
+        Ok(strikes)
+    }
+
+    async fn recalculate_trust_level_with_tx(
+        &self,
+        user_id: Uuid,
+        tx: &mut Transaction<'_, Postgres>,
+    ) -> Result<()> {
         let row = sqlx::query(
             "SELECT account_age_days, posts_count, trust_points, flags_received, strikes \
              FROM user_trust_scores \
              WHERE user_id = $1",
         )
         .bind(user_id)
-        .fetch_one(self.db.pool())
+        .fetch_one(&mut **tx)
         .await?;
 
         let age_days: i32 = row.get("account_age_days");
@@ -181,111 +277,38 @@ impl TrustService {
         )
         .bind(new_level.as_i32())
         .bind(user_id)
-        .execute(self.db.pool())
+        .execute(&mut **tx)
         .await?;
 
         Ok(())
     }
 
-    /// Check if user is currently banned
-    pub async fn is_banned(&self, user_id: Uuid) -> Result<bool> {
-        let row = sqlx::query(
-            "SELECT banned_until FROM user_trust_scores WHERE user_id = $1",
-        )
-        .bind(user_id)
-        .fetch_optional(self.db.pool())
-        .await?;
-
-        if let Some(row) = row {
-            if let Some(banned_until) = row.get::<Option<OffsetDateTime>, _>("banned_until") {
-                return Ok(banned_until > OffsetDateTime::now_utc());
-            }
-        }
-
-        Ok(false)
-    }
-
-    /// Add strike to user (3 strikes = temporary ban)
-    #[allow(dead_code)]
-    pub async fn add_strike(&self, user_id: Uuid, reason: &str) -> Result<i32> {
-        let result = sqlx::query(
-            "UPDATE user_trust_scores \
-             SET strikes = strikes + 1, \
-                 flags_received = flags_received + 1, \
-                 trust_points = GREATEST(0, trust_points - 50), \
-                 updated_at = NOW() \
-             WHERE user_id = $1 \
-             RETURNING strikes",
-        )
-        .bind(user_id)
-        .fetch_one(self.db.pool())
-        .await?;
-
-        let strikes: i32 = result.get("strikes");
-
-        // Auto-ban after 3 strikes with escalating duration
-        if strikes >= 3 {
-            let ban_duration_days = match strikes {
-                3 => 7,    // 1 week
-                4 => 30,   // 1 month
-                _ => 365,  // 1 year
-            };
-
-            let ban_until = OffsetDateTime::now_utc() + time::Duration::days(ban_duration_days);
-
-            sqlx::query(
-                "UPDATE user_trust_scores \
-                 SET banned_until = $1, \
-                     trust_level = 0, \
-                     updated_at = NOW() \
-                 WHERE user_id = $2",
-            )
-            .bind(ban_until)
-            .bind(user_id)
-            .execute(self.db.pool())
-            .await?;
-
-            tracing::warn!(
-                user_id = %user_id,
-                strikes = strikes,
-                ban_until = %ban_until,
-                reason = reason,
-                "User automatically banned due to strikes"
-            );
-        }
-
-        // Recalculate trust level after strike
-        self.recalculate_trust_level(user_id).await?;
-
-        Ok(strikes)
-    }
-
-    /// Record a flag/report against a user
-    #[allow(dead_code)]
+    /// Record a flag/report against a user. Strike thresholds are evaluated
+    /// atomically in the same transaction so concurrent flags can't skip a
+    /// boundary (e.g. 9→11 without triggering at 10).
     pub async fn record_flag(&self, user_id: Uuid) -> Result<()> {
-        sqlx::query(
+        let mut tx = self.db.pool().begin().await?;
+
+        let flags: i32 = sqlx::query_scalar(
             "UPDATE user_trust_scores \
              SET flags_received = flags_received + 1, \
                  trust_points = GREATEST(0, trust_points - 10), \
                  updated_at = NOW() \
-             WHERE user_id = $1",
+             WHERE user_id = $1 \
+             RETURNING flags_received",
         )
         .bind(user_id)
-        .execute(self.db.pool())
-        .await?;
-
-        // Check if too many flags warrant a strike
-        let flags: i32 = sqlx::query_scalar(
-            "SELECT flags_received FROM user_trust_scores WHERE user_id = $1"
-        )
-        .bind(user_id)
-        .fetch_one(self.db.pool())
+        .fetch_one(&mut *tx)
         .await?;
 
         if flags >= 10 && flags % 10 == 0 {
-            self.add_strike(user_id, "Excessive flags received").await?;
+            self.add_strike_with_tx(user_id, "Excessive flags received", &mut tx)
+                .await?;
+        } else {
+            self.recalculate_trust_level_with_tx(user_id, &mut tx).await?;
         }
 
+        tx.commit().await?;
         Ok(())
     }
 

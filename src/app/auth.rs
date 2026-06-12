@@ -21,6 +21,8 @@ pub enum AuthError {
     Db(#[from] sqlx::Error),
     #[error("{0}")]
     Invite(String),
+    #[error("account is suspended")]
+    Banned,
     #[error(transparent)]
     Internal(#[from] anyhow::Error),
 }
@@ -64,6 +66,7 @@ impl AuthService {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn signup(
         &self,
         handle: String,
@@ -74,9 +77,9 @@ impl AuthService {
         password: String,
         invite_code: String,
     ) -> Result<User, AuthError> {
-        let mut tx = self.db.pool().begin().await?;
+        let password_hash = hash_password(password).await?;
 
-        let password_hash = hash_password(&password)?;
+        let mut tx = self.db.pool().begin().await?;
         let row = sqlx::query(
             "INSERT INTO users (handle, email, display_name, bio, avatar_key, password_hash) \
              VALUES ($1, $2, $3, $4, $5, $6) \
@@ -128,8 +131,10 @@ impl AuthService {
         password: &str,
     ) -> Result<Option<TokenPair>, AuthError> {
         let row = sqlx::query(
-            "SELECT id, password_hash \
-             FROM users WHERE (email = $1 OR handle = $1) AND deleted_at IS NULL",
+            "SELECT u.id, u.password_hash, uts.banned_until \
+             FROM users u \
+             LEFT JOIN user_trust_scores uts ON uts.user_id = u.id \
+             WHERE (u.email = $1 OR u.handle = $1) AND u.deleted_at IS NULL",
         )
         .bind(identifier)
         .fetch_optional(self.db.pool())
@@ -142,12 +147,19 @@ impl AuthService {
 
         let user_id: Uuid = row.get("id");
         let password_hash: String = row.get("password_hash");
+        let banned_until: Option<OffsetDateTime> = row.get("banned_until");
         if password_hash.is_empty() {
             return Ok(None);
         }
 
-        if !verify_password(password, &password_hash)? {
+        if !verify_password(password.to_string(), password_hash).await? {
             return Ok(None);
+        }
+
+        // Checked after password verification so the response doesn't leak
+        // ban status to someone who doesn't know the credentials.
+        if banned_until.is_some_and(|until| until > OffsetDateTime::now_utc()) {
+            return Err(AuthError::Banned);
         }
 
         let tokens = self.issue_token_pair(user_id).await?;
@@ -162,14 +174,19 @@ impl AuthService {
         let token_hash = hash_token(refresh_token);
 
         let mut tx = self.db.pool().begin().await?;
+        // FOR UPDATE serializes concurrent refreshes of the same token: the
+        // second request blocks until the first commits, then sees revoked_at
+        // set and is rejected instead of minting a parallel token family.
         let row = sqlx::query(
-            "SELECT id \
-             FROM refresh_tokens \
-             WHERE id = $1 \
-               AND user_id = $2 \
-               AND token_hash = $3 \
-               AND revoked_at IS NULL \
-               AND expires_at > now()",
+            "SELECT rt.revoked_at, u.deleted_at, uts.banned_until \
+             FROM refresh_tokens rt \
+             JOIN users u ON u.id = rt.user_id \
+             LEFT JOIN user_trust_scores uts ON uts.user_id = rt.user_id \
+             WHERE rt.id = $1 \
+               AND rt.user_id = $2 \
+               AND rt.token_hash = $3 \
+               AND rt.expires_at > now() \
+             FOR UPDATE OF rt",
         )
         .bind(refresh_id)
         .bind(user_id)
@@ -177,9 +194,44 @@ impl AuthService {
         .fetch_optional(&mut *tx)
         .await?;
 
-        if row.is_none() {
+        let row = match row {
+            Some(row) => row,
+            None => {
+                tx.rollback().await?;
+                return Ok(None);
+            }
+        };
+
+        // Reuse detection: presenting an already-rotated token means it was
+        // either replayed by an attacker or the client lost the rotation
+        // response. Revoke the user's whole token family to force re-login.
+        if row.get::<Option<OffsetDateTime>, _>("revoked_at").is_some() {
+            sqlx::query(
+                "UPDATE refresh_tokens SET revoked_at = now() \
+                 WHERE user_id = $1 AND revoked_at IS NULL",
+            )
+            .bind(user_id)
+            .execute(&mut *tx)
+            .await?;
+            tx.commit().await?;
+            tracing::warn!(
+                user_id = %user_id,
+                refresh_id = %refresh_id,
+                "revoked refresh token reused; revoking all sessions for user"
+            );
+            return Ok(None);
+        }
+
+        if row.get::<Option<OffsetDateTime>, _>("deleted_at").is_some() {
             tx.rollback().await?;
             return Ok(None);
+        }
+        if row
+            .get::<Option<OffsetDateTime>, _>("banned_until")
+            .is_some_and(|until| until > OffsetDateTime::now_utc())
+        {
+            tx.rollback().await?;
+            return Err(AuthError::Banned);
         }
 
         let tokens = self.issue_token_pair_with_tx(user_id, &mut tx).await?;
@@ -230,6 +282,24 @@ impl AuthService {
             return Ok(None);
         }
         let user_id = claim_uuid(&claims, "sub")?;
+
+        // Tokens stay valid for up to 15 minutes after issuance; reject ones
+        // belonging to accounts deleted or suspended in the meantime.
+        let active: Option<bool> = sqlx::query_scalar(
+            "SELECT true \
+             FROM users u \
+             LEFT JOIN user_trust_scores uts ON uts.user_id = u.id \
+             WHERE u.id = $1 \
+               AND u.deleted_at IS NULL \
+               AND (uts.banned_until IS NULL OR uts.banned_until <= now())",
+        )
+        .bind(user_id)
+        .fetch_optional(self.db.pool())
+        .await?;
+        if active.is_none() {
+            return Ok(None);
+        }
+
         Ok(Some(AuthSession { user_id }))
     }
 
@@ -363,7 +433,21 @@ struct IssuedTokens {
     pair: TokenPair,
 }
 
-fn hash_password(password: &str) -> AnyResult<String> {
+// Argon2 hashing takes tens of milliseconds of pure CPU; run it on the
+// blocking thread pool so it can't stall the async runtime under load.
+async fn hash_password(password: String) -> AnyResult<String> {
+    tokio::task::spawn_blocking(move || hash_password_sync(&password))
+        .await
+        .map_err(|err| anyhow!("password hashing task failed: {}", err))?
+}
+
+async fn verify_password(password: String, hash: String) -> AnyResult<bool> {
+    tokio::task::spawn_blocking(move || verify_password_sync(&password, &hash))
+        .await
+        .map_err(|err| anyhow!("password verification task failed: {}", err))?
+}
+
+fn hash_password_sync(password: &str) -> AnyResult<String> {
     let salt = SaltString::generate(&mut argon2::password_hash::rand_core::OsRng);
     let argon2 = Argon2::default();
     let hash = argon2
@@ -372,7 +456,7 @@ fn hash_password(password: &str) -> AnyResult<String> {
     Ok(hash.to_string())
 }
 
-fn verify_password(password: &str, hash: &str) -> AnyResult<bool> {
+fn verify_password_sync(password: &str, hash: &str) -> AnyResult<bool> {
     let parsed = PasswordHash::new(hash)
         .map_err(|err| anyhow!("failed to parse password hash: {}", err))?;
     Ok(Argon2::default()

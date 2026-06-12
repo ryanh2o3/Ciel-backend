@@ -43,8 +43,15 @@ env:
   DOCKER_IMAGE_NAME: ciel-backend
 
 jobs:
+  # Gate the whole pipeline on the test suite: nothing is built or deployed
+  # from a commit that doesn't compile, lint, and pass integration tests.
+  tests:
+    name: Tests
+    uses: ./.github/workflows/test.yml
+
   build-and-push:
     name: Build and Push Docker Image
+    needs: tests
     runs-on: ubuntu-latest
     outputs:
       image_tag: ${{ steps.tag.outputs.tag }}
@@ -277,7 +284,7 @@ jobs:
         run: |
           echo "::warning::Automatic DOCS_* secret sync failed (permissions or gh CLI). Set DOCS_BUCKET_NAME, DOCS_SCW_ACCESS_KEY, DOCS_SCW_SECRET_KEY manually — see docs-site/README.md."
 
-  # Database migrations now run on the instance via cloud-init (after docker compose up).
+  # Database migrations run on the instance via cloud-init (before docker compose up).
   # The instance is on the private network and can reach the database directly.
 
   notify:

@@ -39,6 +39,12 @@ impl PostService {
         if media_ids.len() > 10 {
             return Err(PostError::Validation("maximum 10 images per post"));
         }
+        // Duplicates would violate the (post_id, media_id) PK mid-transaction
+        // and also defeat the ownership count check below.
+        let unique: std::collections::HashSet<&Uuid> = media_ids.iter().collect();
+        if unique.len() != media_ids.len() {
+            return Err(PostError::Validation("media_ids must be unique"));
+        }
 
         // Verify all media IDs belong to this user
         let owned_count: i64 = sqlx::query_scalar(
@@ -104,6 +110,33 @@ impl PostService {
             owner_avatar_key: row.get("owner_avatar_key"),
             owner_avatar_url: None,
         })
+    }
+
+    /// Lightweight visibility check used by engagement endpoints so users
+    /// can't interact with (or enumerate) posts they aren't allowed to see.
+    pub async fn can_view_post(&self, post_id: Uuid, viewer_id: Uuid) -> Result<bool, PostError> {
+        let visible: Option<bool> = sqlx::query_scalar(
+            "SELECT true \
+             FROM posts p \
+             JOIN users u ON p.owner_id = u.id AND u.deleted_at IS NULL \
+             WHERE p.id = $1 \
+               AND (p.visibility = 'public' \
+                    OR p.owner_id = $2 \
+                    OR (p.visibility = 'followers_only' AND EXISTS ( \
+                        SELECT 1 FROM follows WHERE follower_id = $2 AND followee_id = p.owner_id \
+                    ))) \
+               AND NOT EXISTS ( \
+                   SELECT 1 FROM blocks \
+                   WHERE (blocker_id = p.owner_id AND blocked_id = $2) \
+                      OR (blocker_id = $2 AND blocked_id = p.owner_id) \
+               )",
+        )
+        .bind(post_id)
+        .bind(viewer_id)
+        .fetch_optional(self.db.pool())
+        .await?;
+
+        Ok(visible.unwrap_or(false))
     }
 
     pub async fn get_post(

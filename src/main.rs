@@ -43,6 +43,30 @@ async fn main() -> anyhow::Result<()> {
         return Ok(());
     }
 
+    // Dedicated worker only needs DB + S3 + SQS — don't require Redis to be up.
+    if config.app_mode == "worker" {
+        tracing::info!("starting worker mode");
+        let db = Db::connect(&config).await?;
+        let storage = ObjectStorage::new(&config).await?;
+        let queue = QueueClient::new(&config).await?;
+
+        let shutdown = CancellationToken::new();
+        let worker_shutdown = shutdown.clone();
+        let worker = tokio::spawn(async move {
+            if let Err(err) =
+                ciel::jobs::media_processor::run(db, storage, queue, worker_shutdown).await
+            {
+                tracing::error!(error = ?err, "media worker exited with error");
+            }
+        });
+
+        shutdown_signal().await;
+        shutdown.cancel();
+        // Give an in-flight job time to finish so it isn't redelivered.
+        let _ = tokio::time::timeout(Duration::from_secs(30), worker).await;
+        return Ok(());
+    }
+
     let db = Db::connect(&config).await?;
     let cache = RedisCache::connect(&config.redis_url).await?;
     let storage = ObjectStorage::new(&config).await?;
@@ -55,19 +79,18 @@ async fn main() -> anyhow::Result<()> {
     let (notification_tx, notification_rx) = mpsc::channel(config.notification_queue_capacity);
 
     let mut api_background_handles: Vec<JoinHandle<()>> = Vec::new();
-    if matches!(config.app_mode.as_str(), "api" | "combined") {
+    {
         let db_n = db.clone();
         let sd = bg_shutdown.clone();
         api_background_handles.push(tokio::spawn(async move {
             ciel::jobs::notifications::run_notification_worker(notification_rx, db_n, sd).await;
         }));
         let db_c = db.clone();
+        let queue_c = queue.clone();
         let sd = bg_shutdown.clone();
         api_background_handles.push(tokio::spawn(async move {
-            ciel::jobs::cleanup::run_cleanup_loop(db_c, sd).await;
+            ciel::jobs::cleanup::run_cleanup_loop(db_c, queue_c, sd).await;
         }));
-    } else {
-        drop(notification_rx);
     }
 
     let state = AppState {
@@ -96,17 +119,19 @@ async fn main() -> anyhow::Result<()> {
                 let worker_db = state.db.clone();
                 let worker_storage = state.storage.clone();
                 let worker_queue = state.queue.clone();
-                tokio::spawn(async move {
+                let worker_shutdown = bg_shutdown.clone();
+                api_background_handles.push(tokio::spawn(async move {
                     if let Err(err) = ciel::jobs::media_processor::run(
                         worker_db,
                         worker_storage,
                         worker_queue,
+                        worker_shutdown,
                     )
                     .await
                     {
                         tracing::error!(error = ?err, "media worker exited with error");
                     }
-                });
+                }));
             }
 
             let app: Router = ciel::http::router(state).layer(
@@ -140,15 +165,6 @@ async fn main() -> anyhow::Result<()> {
             axum::serve(listener, app)
                 .with_graceful_shutdown(shutdown)
                 .await?;
-        }
-        "worker" => {
-            tracing::info!("starting worker mode");
-            tokio::select! {
-                result = ciel::jobs::media_processor::run(state.db.clone(), state.storage.clone(), state.queue.clone()) => {
-                    result?;
-                }
-                _ = shutdown_signal() => {}
-            }
         }
         other => return Err(anyhow!("unknown APP_MODE: {}", other)),
     }

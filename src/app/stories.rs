@@ -170,7 +170,7 @@ impl StoryService {
         };
 
         rows.iter()
-            .map(|row| row_to_story(row))
+            .map(row_to_story)
             .collect::<StoryResult<Vec<Story>>>()
     }
 
@@ -283,6 +283,8 @@ impl StoryService {
     }
 
     /// Remove a reaction and decrement the counter atomically via CTE.
+    /// (The counter is maintained exclusively here — migration 014 drops the
+    /// DB trigger that used to double-decrement it.)
     pub async fn remove_reaction(&self, story_id: Uuid, user_id: Uuid) -> StoryResult<bool> {
         let result = sqlx::query(
             "WITH deleted AS ( \
@@ -291,7 +293,7 @@ impl StoryService {
                 RETURNING story_id \
              ) \
              UPDATE stories \
-             SET reaction_count = reaction_count - 1 \
+             SET reaction_count = GREATEST(reaction_count - 1, 0) \
              WHERE id IN (SELECT story_id FROM deleted)",
         )
         .bind(story_id)
@@ -502,24 +504,16 @@ impl StoryService {
 
         let highlight_id: Uuid = highlight.get("id");
 
-        // Determine insertion position (append after the current max)
-        let max_pos: Option<i32> = sqlx::query_scalar(
-            "SELECT MAX(position) FROM story_highlight_items WHERE highlight_id = $1",
-        )
-        .bind(highlight_id)
-        .fetch_one(self.db.pool())
-        .await?;
-
-        let next_pos = max_pos.map_or(0, |p| p + 1);
-
+        // Compute the append position in the same statement as the insert so
+        // two concurrent adds can't both read the same MAX.
         sqlx::query(
             "INSERT INTO story_highlight_items (highlight_id, story_id, position) \
-             VALUES ($1, $2, $3) \
+             SELECT $1, $2, COALESCE(MAX(position) + 1, 0) \
+             FROM story_highlight_items WHERE highlight_id = $1 \
              ON CONFLICT (highlight_id, story_id) DO NOTHING",
         )
         .bind(highlight_id)
         .bind(story_id)
-        .bind(next_pos)
         .execute(self.db.pool())
         .await?;
 
@@ -597,22 +591,16 @@ impl StoryService {
         let cache_key = format!("feed:stories:{}:{}", user_id, limit);
 
         if should_cache {
-            match self.cache.client().get_multiplexed_async_connection().await {
-                Ok(mut conn) => {
-                    match conn.get::<_, Option<String>>(&cache_key).await {
-                        Ok(Some(payload)) => {
-                            if let Ok(stories) = serde_json::from_str::<Vec<Story>>(&payload) {
-                                return Ok(stories);
-                            }
-                        }
-                        Ok(None) => {}
-                        Err(err) => {
-                            tracing::warn!(error = ?err, "failed to read stories feed cache");
-                        }
+            let mut conn = self.cache.conn();
+            match conn.get::<_, Option<String>>(&cache_key).await {
+                Ok(Some(payload)) => {
+                    if let Ok(stories) = serde_json::from_str::<Vec<Story>>(&payload) {
+                        return Ok(stories);
                     }
                 }
+                Ok(None) => {}
                 Err(err) => {
-                    tracing::warn!(error = ?err, "failed to connect to Redis for stories feed cache");
+                    tracing::warn!(error = ?err, "failed to read stories feed cache");
                 }
             }
         }
@@ -636,6 +624,7 @@ impl StoryService {
                        ) \
                        AND (s.visibility = 'public' \
                             OR ((s.visibility = 'friends_only' OR s.visibility = 'close_friends_only') \
+                                AND EXISTS (SELECT 1 FROM follows WHERE follower_id = $2 AND followee_id = s.user_id) \
                                 AND EXISTS (SELECT 1 FROM follows WHERE follower_id = s.user_id AND followee_id = $2))) \
                        AND (s.created_at < $3 OR (s.created_at = $3 AND s.id < $4)) \
                      ORDER BY s.created_at DESC, s.id DESC \
@@ -666,6 +655,7 @@ impl StoryService {
                        ) \
                        AND (s.visibility = 'public' \
                             OR ((s.visibility = 'friends_only' OR s.visibility = 'close_friends_only') \
+                                AND EXISTS (SELECT 1 FROM follows WHERE follower_id = $2 AND followee_id = s.user_id) \
                                 AND EXISTS (SELECT 1 FROM follows WHERE follower_id = s.user_id AND followee_id = $2))) \
                      ORDER BY s.created_at DESC, s.id DESC \
                      LIMIT $3",
@@ -684,19 +674,27 @@ impl StoryService {
         }
 
         if should_cache {
-            if let Ok(mut conn) = self.cache.client().get_multiplexed_async_connection().await {
-                if let Ok(payload) = serde_json::to_string(&stories) {
-                    if let Err(err) = conn
-                        .set_ex::<_, _, ()>(&cache_key, payload, STORIES_FEED_CACHE_TTL)
-                        .await
-                    {
-                        tracing::warn!(error = ?err, "failed to write stories feed cache");
-                    }
+            let mut conn = self.cache.conn();
+            if let Ok(payload) = serde_json::to_string(&stories) {
+                if let Err(err) = conn
+                    .set_ex::<_, _, ()>(&cache_key, payload, STORIES_FEED_CACHE_TTL)
+                    .await
+                {
+                    tracing::warn!(error = ?err, "failed to write stories feed cache");
                 }
             }
         }
 
         Ok(stories)
+    }
+
+    /// Drop a user's cached stories feed (all limit variants). Called when the
+    /// follow graph or block list changes so the next read reflects it.
+    pub async fn invalidate_stories_feed(&self, user_id: Uuid) {
+        let pattern = format!("feed:stories:{}:*", user_id);
+        if let Err(err) = self.cache.delete_pattern(&pattern).await {
+            tracing::warn!(error = ?err, user_id = %user_id, "failed to invalidate stories feed cache");
+        }
     }
 }
 

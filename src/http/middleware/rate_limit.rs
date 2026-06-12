@@ -26,6 +26,9 @@ fn rate_limit_action(path: &str, method: &str) -> Option<&'static str> {
         (p, "POST") if p.contains("/unfollow") => Some("unfollow"),
         ("/feed", "GET") | ("/feed/stories", "GET") => Some("feed"),
         ("/feed/refresh", "POST") => Some("feed"),
+        ("/stories", "POST") => Some("post"),
+        (p, "POST") if p.starts_with("/stories/") && p.ends_with("/seen") => Some("like"),
+        (p, "POST") if p.starts_with("/stories/") && p.ends_with("/reactions") => Some("like"),
         (p, _) if p.starts_with("/notifications") => Some("notifications"),
         (p, _) if p.starts_with("/search/") => Some("search"),
         (p, "GET") if p.starts_with("/media") => Some("media_read"),
@@ -44,8 +47,14 @@ fn ip_rate_limit_config(
     let p = logical_path(path);
     match (p, method) {
         ("/auth/login", "POST") => Some(("login", 10, RateWindow::Hour)),
+        ("/auth/refresh", "POST") => Some(("auth_refresh", 30, RateWindow::Hour)),
+        ("/auth/revoke", "POST") => Some(("auth_revoke", 30, RateWindow::Hour)),
         ("/users", "POST") => Some(("signup", ip_signup_limit, RateWindow::Day)),
         ("/health", "GET") => Some(("health", 60, RateWindow::Minute)),
+        ("/account/device/register", "POST") => Some(("device_register", 30, RateWindow::Hour)),
+        (p, "GET") if p.starts_with("/invites/validate/") => {
+            Some(("invite_validate", 60, RateWindow::Hour))
+        }
         _ => None,
     }
 }
@@ -77,9 +86,11 @@ pub async fn rate_limit_middleware(
                 .map(|s| s.trust_level)
                 .unwrap_or(TrustLevel::New);
 
+            // Atomic check-and-consume; Redis errors fail closed (503-style 500)
+            // rather than silently disabling rate limiting.
             let rate_limiter = RateLimiter::new(state.cache.clone());
             let info = rate_limiter
-                .check_rate_limit(auth_user.user_id, action, trust_level)
+                .check_and_increment(auth_user.user_id, action, trust_level)
                 .await
                 .map_err(|err| {
                     tracing::error!(error = ?err, "failed to check rate limit");
@@ -88,14 +99,10 @@ pub async fn rate_limit_middleware(
 
             if info.limited {
                 return Err(AppError::rate_limited_with_headers(
-                    &format!("Rate limit exceeded for action: {}. Please try again later.", action),
+                    format!("Rate limit exceeded for action: {}. Please try again later.", action),
                     info.limit,
                     0,
                 ));
-            }
-
-            if let Err(err) = rate_limiter.increment(auth_user.user_id, action).await {
-                tracing::warn!(error = ?err, "failed to increment rate limit counter");
             }
 
             let mut response = next.run(request).await;
@@ -103,7 +110,7 @@ pub async fn rate_limit_middleware(
             if let Ok(v) = HeaderValue::from_str(&info.limit.to_string()) {
                 headers.insert("X-RateLimit-Limit", v);
             }
-            if let Ok(v) = HeaderValue::from_str(&info.remaining.saturating_sub(1).to_string()) {
+            if let Ok(v) = HeaderValue::from_str(&info.remaining.to_string()) {
                 headers.insert("X-RateLimit-Remaining", v);
             }
             return Ok(response);
@@ -140,7 +147,7 @@ pub async fn ip_rate_limit_middleware(
     let rate_limiter = RateLimiter::new(state.cache.clone());
 
     let is_limited = rate_limiter
-        .check_ip_rate_limit(&ip, action, limit, window)
+        .check_and_increment_ip(&ip, action, limit, window)
         .await
         .map_err(|err| {
             tracing::error!(error = ?err, "failed to check IP rate limit");
@@ -154,10 +161,6 @@ pub async fn ip_rate_limit_middleware(
             limit,
             0,
         ));
-    }
-
-    if let Err(err) = rate_limiter.increment_ip(&ip, action, window).await {
-        tracing::warn!(error = ?err, "failed to increment IP rate limit counter");
     }
 
     Ok(next.run(request).await)
@@ -186,7 +189,28 @@ mod tests {
     }
 
     #[test]
-    fn ip_limit_health_no_v1() {
-        assert!(ip_rate_limit_config("/health", "GET", 3).is_some());
+    fn rate_limit_story_create_under_v1() {
+        assert_eq!(rate_limit_action("/v1/stories", "POST"), Some("post"));
+    }
+
+    #[test]
+    fn rate_limit_story_seen_under_v1() {
+        assert_eq!(
+            rate_limit_action(
+                "/v1/stories/550e8400-e29b-41d4-a716-446655440000/seen",
+                "POST"
+            ),
+            Some("like")
+        );
+    }
+
+    #[test]
+    fn ip_limit_auth_refresh_under_v1() {
+        assert!(ip_rate_limit_config("/v1/auth/refresh", "POST", 3).is_some());
+    }
+
+    #[test]
+    fn ip_limit_invite_validate_under_v1() {
+        assert!(ip_rate_limit_config("/v1/invites/validate/ABC123", "GET", 3).is_some());
     }
 }

@@ -19,5 +19,9 @@ pub struct Comment {
     pub body: String,
     #[serde(with = "time::serde::rfc3339")]
     pub created_at: OffsetDateTime,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub user_handle: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub user_display_name: Option<String>,
 }
 

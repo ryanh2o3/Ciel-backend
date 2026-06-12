@@ -38,7 +38,18 @@ pub async fn run_notification_worker(
     loop {
         tokio::select! {
             _ = shutdown.cancelled() => {
-                tracing::info!("notification worker stopping");
+                // Stop accepting new jobs, then drain what's already queued so
+                // notifications accepted before shutdown aren't silently lost.
+                rx.close();
+                let mut drained = 0usize;
+                while let Ok(job) = rx.try_recv() {
+                    if let Err(err) = process_job(&db, job).await {
+                        metrics::counter!("notifications_worker_failures_total").increment(1);
+                        tracing::warn!(error = ?err, "notification job failed during drain");
+                    }
+                    drained += 1;
+                }
+                tracing::info!(drained, "notification worker stopping");
                 break;
             }
             job = rx.recv() => {

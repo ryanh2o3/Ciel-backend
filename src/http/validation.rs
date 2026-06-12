@@ -6,6 +6,10 @@ pub const MAX_DISPLAY_NAME_LEN: usize = 50;
 pub const MAX_BIO_LEN: usize = 500;
 pub const MAX_CAPTION_LEN: usize = 2200;
 pub const MAX_PASSWORD_LEN: usize = 128;
+pub const MAX_EMAIL_LEN: usize = 254;
+pub const MAX_SEARCH_QUERY_LEN: usize = 100;
+pub const MAX_HIGHLIGHT_NAME_LEN: usize = 50;
+pub const MAX_FINGERPRINT_LEN: usize = 512;
 
 pub fn required_trimmed(field: &'static str, value: &str) -> Result<String, AppError> {
     let trimmed = value.trim();

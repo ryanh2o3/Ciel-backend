@@ -1,12 +1,20 @@
 use anyhow::{anyhow, Result};
 use aws_config::meta::region::RegionProviderChain;
+use aws_config::timeout::TimeoutConfig;
 use aws_config::BehaviorVersion;
 use aws_config::Region;
 use aws_sdk_sqs::config::Credentials;
 use aws_sdk_sqs::error::SdkError;
+use aws_sdk_sqs::types::QueueAttributeName;
 use aws_sdk_sqs::Client;
 use serde_json;
+use std::time::Duration;
 use tracing::{debug, warn};
+
+/// How long a received message stays invisible before SQS redelivers it.
+/// Must comfortably exceed the worst-case media processing time so a slow
+/// job isn't processed twice concurrently.
+const QUEUE_VISIBILITY_TIMEOUT_SECONDS: &str = "300";
 
 use crate::config::AppConfig;
 use crate::jobs::media_processor::MediaJob;
@@ -28,9 +36,17 @@ impl QueueClient {
     pub async fn new(config: &AppConfig) -> Result<Self> {
         let region = Region::new(config.queue_region.clone());
 
+        // Operation timeout must exceed the 10s long-poll wait used by the worker.
+        let timeouts = TimeoutConfig::builder()
+            .connect_timeout(Duration::from_secs(5))
+            .operation_attempt_timeout(Duration::from_secs(30))
+            .operation_timeout(Duration::from_secs(60))
+            .build();
+
         let mut sqs_builder = aws_sdk_sqs::config::Builder::new()
             .behavior_version(BehaviorVersion::latest())
             .region(region)
+            .timeout_config(timeouts)
             .endpoint_url(config.queue_endpoint.clone());
 
         // Use explicit SQS credentials if provided, otherwise fall back to default chain
@@ -72,6 +88,10 @@ impl QueueClient {
                 let created = client
                     .create_queue()
                     .queue_name(&config.queue_name)
+                    .attributes(
+                        QueueAttributeName::VisibilityTimeout,
+                        QUEUE_VISIBILITY_TIMEOUT_SECONDS,
+                    )
                     .send()
                     .await?;
                 created

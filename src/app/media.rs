@@ -101,10 +101,13 @@ impl MediaService {
     }
 
     pub async fn complete_upload(&self, upload_id: Uuid, owner_id: Uuid) -> Result<bool> {
+        // Idempotent on 'uploaded' so a client can safely retry when the
+        // queue enqueue below failed after the status flip (otherwise the
+        // upload would be stranded until the stale-upload sweep finds it).
         let row = sqlx::query(
             "UPDATE media_uploads \
-             SET status = 'uploaded', uploaded_at = now() \
-             WHERE id = $1 AND owner_id = $2 AND status = 'pending' \
+             SET status = 'uploaded', uploaded_at = COALESCE(uploaded_at, now()) \
+             WHERE id = $1 AND owner_id = $2 AND status IN ('pending', 'uploaded') \
              RETURNING original_key",
         )
         .bind(upload_id)
@@ -327,10 +330,17 @@ impl MediaService {
         Ok(status)
     }
 
+    /// Delete a media row, then its S3 objects.
+    ///
+    /// The DB row is deleted first: if S3 cleanup fails the worst case is an
+    /// orphaned object (invisible to users), whereas the old S3-first order
+    /// could leave a DB row pointing at deleted objects (broken images).
+    /// Fails with a foreign-key error (23503) if the media is still referenced
+    /// by a post or story — the handler maps that to 409.
     pub async fn delete_media(&self, media_id: Uuid, owner_id: Uuid) -> Result<bool> {
         let row = sqlx::query(
-            "SELECT id, owner_id, original_key, thumb_key, medium_key \
-             FROM media WHERE id = $1 AND owner_id = $2",
+            "DELETE FROM media WHERE id = $1 AND owner_id = $2 \
+             RETURNING original_key, thumb_key, medium_key",
         )
         .bind(media_id)
         .bind(owner_id)
@@ -347,22 +357,32 @@ impl MediaService {
         let medium_key: String = row.get("medium_key");
 
         for key in [original_key, thumb_key, medium_key] {
-            self.storage
+            if let Err(err) = self
+                .storage
                 .client()
                 .delete_object()
                 .bucket(self.storage.bucket())
-                .key(key)
+                .key(&key)
                 .send()
-                .await?;
+                .await
+            {
+                tracing::warn!(error = ?err, key = %key, media_id = %media_id, "failed to delete S3 object for removed media");
+            }
+            // Drop any cached presigned URL so the object can't be served stale.
+            let mut conn = self.cache.conn();
+            let _ = redis::AsyncCommands::del::<_, ()>(&mut conn, format!("presigned:{}", key)).await;
         }
 
-        let result = sqlx::query("DELETE FROM media WHERE id = $1 AND owner_id = $2")
-            .bind(media_id)
-            .bind(owner_id)
-            .execute(self.db.pool())
-            .await?;
+        Ok(true)
+    }
 
-        Ok(result.rows_affected() > 0)
+    /// Drop a cached presigned URL for an object key (e.g. after avatar change).
+    pub async fn invalidate_presigned_cache(&self, object_key: &str) {
+        let mut conn = self.cache.conn();
+        let cache_key = format!("presigned:{}", object_key);
+        if let Err(err) = conn.del::<_, ()>(&cache_key).await {
+            tracing::warn!(error = ?err, key = %object_key, "failed to invalidate presigned cache");
+        }
     }
 
     /// Generate a presigned GET URL for any object key (e.g., avatars)
@@ -377,7 +397,8 @@ impl MediaService {
         let cache_key = format!("presigned:{}", key);
 
         // Check Redis cache first
-        if let Ok(mut conn) = self.cache.client().get_multiplexed_async_connection().await {
+        {
+            let mut conn = self.cache.conn();
             if let Ok(Some(cached)) = conn.get::<_, Option<String>>(&cache_key).await {
                 return Some(cached);
             }
@@ -408,9 +429,8 @@ impl MediaService {
         // Cache with TTL = expires_in - 5 minutes safety margin
         let cache_ttl = expires_in_seconds.saturating_sub(300);
         if cache_ttl > 0 {
-            if let Ok(mut conn) = self.cache.client().get_multiplexed_async_connection().await {
-                let _ = conn.set_ex::<_, _, ()>(&cache_key, &url, cache_ttl).await;
-            }
+            let mut conn = self.cache.conn();
+            let _ = conn.set_ex::<_, _, ()>(&cache_key, &url, cache_ttl).await;
         }
 
         Some(url)
