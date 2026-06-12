@@ -22,8 +22,9 @@ use uuid::Uuid;
 
 use ciel::app::auth::AuthService;
 use ciel::config::AppConfig;
-use ciel::infra::{cache::RedisCache, db::Db, queue::QueueClient, storage::ObjectStorage};
 use ciel::AppState;
+use ciel::infra::{cache::RedisCache, db::Db, queue::QueueClient, storage::ObjectStorage};
+use metrics_exporter_prometheus::PrometheusHandle;
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -38,12 +39,29 @@ const TEST_ADMIN_TOKEN: &str = "test-admin-token-12345";
 pub const DEFAULT_PASSWORD: &str = "testpassword123";
 
 // ---------------------------------------------------------------------------
-// TestApp — shared, lazily initialized once per test binary
+// TestApp — fresh infra per test; DB migrations run once per binary
 // ---------------------------------------------------------------------------
+
+/// One-time migrated DB + config. Pool/Redis are rebuilt per test so clients
+/// bind to the current #[tokio::test] runtime (shared ConnectionManager leaks
+/// across runtimes and breaks IP rate limiting → 500s).
+struct TestEnv {
+    database_url: String,
+    redis_url: String,
+    config: AppConfig,
+    metrics: PrometheusHandle,
+}
+
+static TEST_ENV: OnceCell<TestEnv> = OnceCell::const_new();
 
 pub struct TestApp {
     router: Router,
     pub state: AppState,
+}
+
+pub async fn app() -> TestApp {
+    let env = TEST_ENV.get_or_init(init_test_env).await;
+    TestApp::build(env).await
 }
 
 pub struct TestResponse {
@@ -69,20 +87,8 @@ pub struct TestUser {
     pub refresh_token: String,
 }
 
-static TEST_APP: OnceCell<TestApp> = OnceCell::const_new();
 
-/// Get (or lazily create) the shared TestApp instance.
-pub async fn app() -> &'static TestApp {
-    TEST_APP
-        .get_or_init(|| async { TestApp::setup().await })
-        .await
-}
-
-impl TestApp {
-    // ------------------------------------------------------------------
-    // Setup — runs once per test binary
-    // ------------------------------------------------------------------
-    async fn setup() -> Self {
+async fn init_test_env() -> TestEnv {
         // Env vars that control test infra (override with env for CI)
         let base_url = std::env::var("TEST_DATABASE_BASE_URL")
             .unwrap_or_else(|_| "postgres://ciel:ciel@localhost:5432".into());
@@ -194,33 +200,53 @@ impl TestApp {
 
         let config = AppConfig::from_env().expect("failed to build AppConfig");
 
-        // Build the pool manually with after_release returning false so that
-        // connections are closed immediately when returned to the pool.  Each
-        // #[tokio::test] creates its own tokio runtime; connections created on
-        // one runtime hang when reused from another.  Disabling connection
-        // reuse guarantees every acquire() creates a fresh connection on the
-        // current runtime.
+        let metrics = metrics_exporter_prometheus::PrometheusBuilder::new()
+            .install_recorder()
+            .expect("failed to install metrics recorder for tests");
+
+        TestEnv {
+            database_url,
+            redis_url,
+            config,
+            metrics,
+        }
+    }
+
+impl TestApp {
+    async fn build(env: &TestEnv) -> Self {
+        // Clear rate-limit counters between tests.
+        {
+            let redis_client = redis::Client::open(env.redis_url.as_str())
+                .expect("cannot open Redis client for flush");
+            let mut conn = redis_client
+                .get_multiplexed_async_connection()
+                .await
+                .expect("cannot connect to Redis for flush");
+            redis::cmd("FLUSHDB")
+                .query_async::<_, ()>(&mut conn)
+                .await
+                .expect("FLUSHDB failed");
+        }
+
+        // Fresh pool per test runtime — after_release(false) avoids reusing
+        // connections created on a different #[tokio::test] runtime.
         let pool = PgPoolOptions::new()
             .max_connections(5)
             .acquire_timeout(std::time::Duration::from_secs(10))
             .after_release(|_conn, _meta| Box::pin(async move { Ok(false) }))
-            .connect(&config.database_url)
+            .connect(&env.database_url)
             .await
             .expect("test pool connect failed");
         let db = Db::from_pool(pool);
-        let cache = RedisCache::connect(&config.redis_url)
+        let cache = RedisCache::connect(&env.redis_url)
             .await
             .expect("Redis connect failed");
-        let storage = ObjectStorage::new(&config)
+        let storage = ObjectStorage::new(&env.config)
             .await
             .expect("ObjectStorage::new failed");
-        let queue = QueueClient::new(&config)
+        let queue = QueueClient::new(&env.config)
             .await
             .expect("QueueClient::new failed");
-
-        let metrics = metrics_exporter_prometheus::PrometheusBuilder::new()
-            .install_recorder()
-            .expect("failed to install metrics recorder for tests");
 
         let db_notif = db.clone();
         let (notification_tx, notification_rx) = mpsc::channel(2048);
@@ -236,17 +262,17 @@ impl TestApp {
             cache,
             storage,
             queue,
-            metrics,
-            upload_url_ttl_seconds: config.upload_url_ttl_seconds,
-            upload_max_bytes: config.upload_max_bytes,
-            admin_token: config.admin_token.clone(),
-            paseto_access_key: config.paseto_access_key,
-            paseto_refresh_key: config.paseto_refresh_key,
-            access_ttl_minutes: config.access_ttl_minutes,
-            refresh_ttl_days: config.refresh_ttl_days,
-            s3_public_endpoint: config.s3_public_endpoint,
+            metrics: env.metrics.clone(),
+            upload_url_ttl_seconds: env.config.upload_url_ttl_seconds,
+            upload_max_bytes: env.config.upload_max_bytes,
+            admin_token: env.config.admin_token.clone(),
+            paseto_access_key: env.config.paseto_access_key,
+            paseto_refresh_key: env.config.paseto_refresh_key,
+            access_ttl_minutes: env.config.access_ttl_minutes,
+            refresh_ttl_days: env.config.refresh_ttl_days,
+            s3_public_endpoint: env.config.s3_public_endpoint,
             ip_signup_rate_limit: 100,
-            trusted_proxy_cidrs: Arc::new(config.trusted_proxy_cidrs.clone()),
+            trusted_proxy_cidrs: Arc::new(env.config.trusted_proxy_cidrs.clone()),
             notification_tx,
         };
 

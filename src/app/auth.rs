@@ -442,9 +442,12 @@ async fn hash_password(password: String) -> AnyResult<String> {
 }
 
 async fn verify_password(password: String, hash: String) -> AnyResult<bool> {
-    tokio::task::spawn_blocking(move || verify_password_sync(&password, &hash))
-        .await
-        .map_err(|err| anyhow!("password verification task failed: {}", err))?
+    match tokio::task::spawn_blocking(move || verify_password_sync(&password, &hash)).await {
+        Ok(Ok(valid)) => Ok(valid),
+        // Treat worker/runtime failures and malformed hashes as invalid credentials
+        // rather than surfacing a 500 to the client.
+        Ok(Err(_)) | Err(_) => Ok(false),
+    }
 }
 
 fn hash_password_sync(password: &str) -> AnyResult<String> {
