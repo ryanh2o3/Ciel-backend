@@ -270,7 +270,7 @@ impl TestApp {
             paseto_refresh_key: env.config.paseto_refresh_key,
             access_ttl_minutes: env.config.access_ttl_minutes,
             refresh_ttl_days: env.config.refresh_ttl_days,
-            s3_public_endpoint: env.config.s3_public_endpoint,
+            s3_public_endpoint: env.config.s3_public_endpoint.clone(),
             ip_signup_rate_limit: 100,
             trusted_proxy_cidrs: Arc::new(env.config.trusted_proxy_cidrs.clone()),
             notification_tx,

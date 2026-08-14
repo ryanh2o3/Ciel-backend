@@ -1,3 +1,7 @@
+# DISABLED — this file is ignored by GitHub Actions (must be named *.yml / *.yaml).
+# Renamed from deploy.yml to stop Scaleway registry builds and Terraform deploys.
+# Re-enable: mv deploy.yml.disabled deploy.yml
+#
 name: Scaleway Terraform CI/CD
 
 on:

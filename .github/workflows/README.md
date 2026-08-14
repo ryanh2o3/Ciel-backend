@@ -37,9 +37,15 @@ See [docs/UNRAID_DEPLOY.md](../../docs/UNRAID_DEPLOY.md) for package visibility 
 
 ---
 
-## Scaleway Terraform CI/CD (`deploy.yml`)
+## Scaleway Terraform CI/CD (`deploy.yml.disabled`) — DISABLED
 
-This workflow automates the deployment of the Ciel backend to Scaleway infrastructure.
+**Disabled.** Renamed from `deploy.yml` so GitHub Actions does not run Scaleway image builds or Terraform apply. Active publish path is [`docker-publish.yml`](docker-publish.yml) → GHCR for Unraid. To re-enable, rename back to `deploy.yml`.
+
+---
+
+### Original description (reference)
+
+This workflow automated deployment of the Ciel backend to Scaleway infrastructure.
 
 ## Workflow Overview
 
