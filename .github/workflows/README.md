@@ -8,6 +8,35 @@ Builds the Next.js static export under `docs-site/` and uploads `out/` with **`s
 
 ---
 
+## Publish Docker image to GHCR (`docker-publish.yml`)
+
+Builds the Ciel API/worker image and pushes to **GitHub Container Registry** for Unraid (or any host) to pull.
+
+### Triggers
+
+- Push to `main` touching `src/`, `migrations/`, `Cargo.*`, `Dockerfile`, or the workflow itself
+- Manual **workflow_dispatch**
+
+### Pipeline
+
+1. **tests** — reuses [`test.yml`](test.yml) (compile, clippy, integration tests)
+2. **build-and-push** — Buildx → `ghcr.io/<owner>/ciel-backend` with tags `:main`, `:latest`, `:sha-<short>`
+
+Uses `GITHUB_TOKEN` (`packages: write`). No extra secrets required to publish.
+
+### Unraid consumption
+
+Set `CIEL_IMAGE=ghcr.io/ryanh2o3/ciel-backend:main` in `.env`, then:
+
+```bash
+docker compose -f docker-compose.unraid.yml --env-file .env pull api worker
+docker compose -f docker-compose.unraid.yml --env-file .env up -d api worker
+```
+
+See [docs/UNRAID_DEPLOY.md](../../docs/UNRAID_DEPLOY.md) for package visibility / `docker login` notes.
+
+---
+
 ## Scaleway Terraform CI/CD (`deploy.yml`)
 
 This workflow automates the deployment of the Ciel backend to Scaleway infrastructure.

@@ -1,7 +1,14 @@
 target/
 .git/
+.github/
+.cursor/
 docker/
+docs/
+docs-site/
+terraform/
+tests/
 *.md
 .env
-.github/
-tests/
+.env.*
+!.env.unraid.example
+.gitignore

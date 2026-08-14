@@ -1,0 +1,198 @@
+# Unraid / homelab stack: Postgres + Redis + MinIO + ElasticMQ + API + worker + Cloudflare Tunnel.
+# Usage:
+#   cp .env.unraid.example .env   # fill secrets + hostnames + CIEL_IMAGE
+#   # optional if the GHCR package is private:
+#   echo "$GHCR_TOKEN" | docker login ghcr.io -u YOUR_GITHUB_USER --password-stdin
+#   docker compose -f docker-compose.unraid.yml --env-file .env pull
+#   docker compose -f docker-compose.unraid.yml --env-file .env up -d
+#
+# Images for api/worker come from GHCR (see .github/workflows/docker-publish.yml).
+# Do not publish DB/Redis/MinIO to the WAN. Public access is via cloudflared only.
+
+services:
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-ciel}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-ciel}
+    volumes:
+      - ${CIEL_DATA_DIR:-./data}/postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-ciel} -d ${POSTGRES_DB:-ciel}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    # No host ports — stay on the compose network only.
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "allkeys-lru"]
+    volumes:
+      - ${CIEL_DATA_DIR:-./data}/redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  minio:
+    image: minio/minio:latest
+    restart: unless-stopped
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?set MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD}
+      # Public hostname clients use (Cloudflare Tunnel → this service).
+      MINIO_SERVER_URL: ${S3_ENDPOINT}
+    volumes:
+      - ${CIEL_MEDIA_DIR:-./data/media}:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  minio-init:
+    image: minio/mc:latest
+    depends_on:
+      minio:
+        condition: service_healthy
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      S3_BUCKET: ${S3_BUCKET:-ciel-media}
+    volumes:
+      - ./docker/minio/init.sh:/init.sh:ro
+    entrypoint: ["/bin/bash", "/init.sh"]
+    restart: "no"
+
+  elasticmq:
+    image: softwaremill/elasticmq:latest
+    restart: unless-stopped
+    volumes:
+      - ./docker/elasticmq/elasticmq.conf:/opt/elasticmq.conf:ro
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/127.0.0.1/9324'"]
+      interval: 5s
+      timeout: 3s
+      retries: 15
+
+  migrate:
+    image: postgres:16
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_USER: ${POSTGRES_USER:-ciel}
+      POSTGRES_DB: ${POSTGRES_DB:-ciel}
+    volumes:
+      - ./migrations:/migrations:ro
+      - ./docker/migrate.sh:/migrate.sh:ro
+    entrypoint: ["/bin/bash", "/migrate.sh"]
+    restart: "no"
+
+  api:
+    image: ${CIEL_IMAGE:-ghcr.io/ryanh2o3/ciel-backend:main}
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+      elasticmq:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+      cloudflared:
+        condition: service_started
+    environment:
+      RUST_LOG: ${RUST_LOG:-info}
+      APP_MODE: api
+      HTTP_ADDR: 0.0.0.0:8080
+      DATABASE_URL: postgres://${POSTGRES_USER:-ciel}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-ciel}
+      REDIS_URL: redis://redis:6379/
+      S3_ENDPOINT: ${S3_ENDPOINT}
+      S3_REGION: ${S3_REGION:-us-east-1}
+      S3_BUCKET: ${S3_BUCKET:-ciel-media}
+      S3_PUBLIC_ENDPOINT: ${S3_PUBLIC_ENDPOINT:-}
+      S3_FORCE_PATH_STYLE: "true"
+      QUEUE_ENDPOINT: http://elasticmq:9324
+      QUEUE_REGION: ${QUEUE_REGION:-us-east-1}
+      QUEUE_NAME: ${QUEUE_NAME:-ciel-media-jobs}
+      SQS_ACCESS_KEY: ${SQS_ACCESS_KEY:-x}
+      SQS_SECRET_KEY: ${SQS_SECRET_KEY:-x}
+      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER}
+      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD}
+      AWS_DEFAULT_REGION: ${S3_REGION:-us-east-1}
+      ACCESS_TTL_MINUTES: ${ACCESS_TTL_MINUTES:-15}
+      REFRESH_TTL_DAYS: ${REFRESH_TTL_DAYS:-30}
+      UPLOAD_URL_TTL_SECONDS: ${UPLOAD_URL_TTL_SECONDS:-900}
+      UPLOAD_MAX_BYTES: ${UPLOAD_MAX_BYTES:-10485760}
+      ADMIN_TOKEN: ${ADMIN_TOKEN:-}
+      PASETO_ACCESS_KEY: ${PASETO_ACCESS_KEY:?set PASETO_ACCESS_KEY}
+      PASETO_REFRESH_KEY: ${PASETO_REFRESH_KEY:?set PASETO_REFRESH_KEY}
+      TRUSTED_PROXY_CIDRS: ${TRUSTED_PROXY_CIDRS:-10.0.0.0/8,172.16.0.0/12,192.168.0.0/16}
+    # Bound to localhost only if you need LAN debugging; tunnel does not need this.
+    ports:
+      - "${API_HOST_BIND:-127.0.0.1}:8080:8080"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+
+  worker:
+    image: ${CIEL_IMAGE:-ghcr.io/ryanh2o3/ciel-backend:main}
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+      elasticmq:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+      cloudflared:
+        condition: service_started
+    environment:
+      RUST_LOG: ${RUST_LOG:-info}
+      APP_MODE: worker
+      DATABASE_URL: postgres://${POSTGRES_USER:-ciel}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-ciel}
+      REDIS_URL: redis://redis:6379/
+      S3_ENDPOINT: ${S3_ENDPOINT}
+      S3_REGION: ${S3_REGION:-us-east-1}
+      S3_BUCKET: ${S3_BUCKET:-ciel-media}
+      S3_PUBLIC_ENDPOINT: ${S3_PUBLIC_ENDPOINT:-}
+      S3_FORCE_PATH_STYLE: "true"
+      QUEUE_ENDPOINT: http://elasticmq:9324
+      QUEUE_REGION: ${QUEUE_REGION:-us-east-1}
+      QUEUE_NAME: ${QUEUE_NAME:-ciel-media-jobs}
+      SQS_ACCESS_KEY: ${SQS_ACCESS_KEY:-x}
+      SQS_SECRET_KEY: ${SQS_SECRET_KEY:-x}
+      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER}
+      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD}
+      AWS_DEFAULT_REGION: ${S3_REGION:-us-east-1}
+      PASETO_ACCESS_KEY: ${PASETO_ACCESS_KEY}
+      PASETO_REFRESH_KEY: ${PASETO_REFRESH_KEY}
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    command: ["tunnel", "--no-autoupdate", "run"]
+    environment:
+      TUNNEL_TOKEN: ${TUNNEL_TOKEN:?set TUNNEL_TOKEN from Cloudflare Zero Trust}
+    # Outbound-only; no ports published.
