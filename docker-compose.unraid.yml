@@ -142,9 +142,8 @@ services:
       PASETO_ACCESS_KEY: ${PASETO_ACCESS_KEY:?set PASETO_ACCESS_KEY}
       PASETO_REFRESH_KEY: ${PASETO_REFRESH_KEY:?set PASETO_REFRESH_KEY}
       TRUSTED_PROXY_CIDRS: ${TRUSTED_PROXY_CIDRS:-10.0.0.0/8,172.16.0.0/12,192.168.0.0/16}
-    # Bound to localhost only if you need LAN debugging; tunnel does not need this.
-    ports:
-      - "${API_HOST_BIND:-127.0.0.1}:8080:8080"
+    # No host port publish — Cloudflare Tunnel reaches api:8080 on the compose network.
+    # For local debugging: docker compose exec api curl -sf http://127.0.0.1:8080/health
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
       interval: 30s
