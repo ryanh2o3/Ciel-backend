@@ -485,7 +485,7 @@ async fn get_user_by_id() {
     let body = resp.json();
     assert_eq!(body["id"].as_str().unwrap(), user.id.to_string());
     assert_eq!(body["handle"].as_str().unwrap(), user.handle);
-    assert_eq!(body["display_name"].as_str().unwrap(), format!("Test User prof_getuser"));
+    assert_eq!(body["display_name"].as_str().unwrap(), "Test User prof_getuser");
 }
 
 #[tokio::test]
