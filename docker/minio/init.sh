@@ -9,20 +9,7 @@ done
 echo "Ensuring bucket ${S3_BUCKET} exists..."
 mc mb --ignore-existing "local/${S3_BUCKET}"
 
-# CORS for browser clients / future web; native mobile apps ignore CORS.
-cat >/tmp/cors.json <<'EOF'
-{
-  "CORSRules": [
-    {
-      "AllowedOrigins": ["*"],
-      "AllowedMethods": ["GET", "PUT", "HEAD", "POST", "DELETE"],
-      "AllowedHeaders": ["*"],
-      "ExposeHeaders": ["ETag", "Content-Length", "Content-Type"],
-      "MaxAgeSeconds": 3600
-    }
-  ]
-}
-EOF
-mc cors set /tmp/cors.json "local/${S3_BUCKET}"
+# Bucket-level CORS (`mc cors set`) is AIStor-only and fails on community MinIO.
+# Global CORS defaults to * via MINIO_API_CORS_ALLOW_ORIGIN on the minio service.
 
 echo "MinIO init complete."

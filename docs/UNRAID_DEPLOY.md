@@ -32,24 +32,45 @@ Create shares (or folders):
 
 Clone this backend onto the array, e.g. `/mnt/user/appdata/ciel/Ciel-backend`.
 
-## 2. Cloudflare Tunnel
+## 2. Cloudflare Tunnel (dashboard only — do not install a separate Unraid app)
+
+You do **not** install Cloudflare Tunnel from the Unraid Apps/CA store for this setup. The connector is the `cloudflared` service inside [`docker-compose.unraid.yml`](../docker-compose.unraid.yml). It starts automatically in **step 6** when you `docker compose … up -d`, after you put the token in `.env` (**step 4**).
+
+**This step is only the Cloudflare website side:**
 
 1. Cloudflare Dashboard → **Zero Trust** → **Networks** → **Tunnels** → **Create a tunnel** (Cloudflared).
-2. Name it (e.g. `ciel-unraid`) and copy the **tunnel token**.
-3. Under **Public Hostname**, add:
+2. Name it (e.g. `ciel-unraid`) and save.
+3. Cloudflare will show **install / run connector** commands (Docker, Linux, etc.) — there is usually **no separate “copy token” button**. That is normal.
+4. **Extract the token from any install command:**
+   - Pick the **Docker** tab (or any OS — the token is the same).
+   - Copy the whole command into a text editor (do **not** run it on Unraid).
+   - Find `--token` (or `cloudflared service install `). The value after it is a long string starting with `eyJ…`.
+   - That string alone is `TUNNEL_TOKEN` for step 4.
+
+   Example (token abbreviated):
+
+   ```text
+   docker run cloudflare/cloudflared:latest tunnel --no-autoupdate run --token eyJhIjoiNWFiNGU5Z...
+   ```
+
+   → put only `eyJhIjoiNWFiNGU5Z...` in `.env` as `TUNNEL_TOKEN=...`
+
+5. Skip actually installing that connector on Unraid — Compose already runs `cloudflare/cloudflared:latest` with the token.
+6. If you already closed the wizard: open the tunnel → **Overview** / **Edit** → **Add a connector** (or similar) to reveal the install command again, then extract `--token` the same way.
+7. Under **Public Hostname**, add:
 
 | Public hostname | Service | Notes |
 |-----------------|---------|--------|
 | `home-api.ciel-social.eu` | `http://api:8080` | Same Docker network as compose |
 | `home-media.ciel-social.eu` | `http://minio:9000` | Path-style S3 API at domain root |
 
-4. Note the tunnel UUID. Cloudflare shows a CNAME target like:
+8. Note the tunnel UUID (shown in the tunnel details / CNAME target). Cloudflare shows a target like:
 
    `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx.cfargotunnel.com`
 
-`cloudflared` in Compose joins the project network, so use service names `api` and `minio` (not Unraid host IPs) when the tunnel container runs in this compose file.
+`cloudflared` in Compose joins the project network, so use service names `api` and `minio` (not Unraid host IPs).
 
-If you run `cloudflared` as a separate Unraid container on `bridge`, point services at `http://172.x.x.x:8080` / `:9000` on the Unraid host instead, and publish those ports on the host. Prefer the in-compose `cloudflared` service.
+If you instead run `cloudflared` as a separate Unraid container on `bridge`, point services at host IPs/ports and publish those ports — prefer the in-compose service.
 
 ## 3. Scaleway DNS CNAMEs
 
@@ -81,7 +102,7 @@ openssl rand -base64 32   # → PASETO_REFRESH_KEY
 
 Edit `.env`:
 
-- Set `TUNNEL_TOKEN` from step 2
+- Set `TUNNEL_TOKEN` from step 2 (the `eyJ…` string after `--token` in Cloudflare’s install command — not the whole `docker run` line)
 - Set strong `POSTGRES_PASSWORD` and `MINIO_ROOT_PASSWORD`
 - Confirm paths `CIEL_DATA_DIR` / `CIEL_MEDIA_DIR`
 - Set `CIEL_IMAGE` (default `ghcr.io/ryanh2o3/ciel-backend:main`)
@@ -119,9 +140,11 @@ echo "$GHCR_TOKEN" | docker login ghcr.io -u ryanh2o3 --password-stdin
 
 Store the login in Unraid’s Docker credentials so pulls survive reboots.
 
-## 6. Start the stack
+## 6. Start the stack (this is when Cloudflare Tunnel is installed on Unraid)
 
-DNS and tunnel public hostnames should already exist. Prefer pulling a pre-built image (no compile on Unraid):
+DNS and tunnel public hostnames should already exist. Prefer pulling a pre-built image (no compile on Unraid).
+
+`docker compose … up -d` pulls and starts **`cloudflared`** with `TUNNEL_TOKEN` from `.env` — that is the Unraid-side Tunnel install. Confirm it is healthy with `docker compose … logs -f cloudflared` (should show a registered connection, not “invalid token”).
 
 ```bash
 cd /path/to/Ciel-backend

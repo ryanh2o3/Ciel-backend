@@ -47,6 +47,8 @@ services:
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD}
       # Public hostname clients use (Cloudflare Tunnel → this service).
       MINIO_SERVER_URL: ${S3_ENDPOINT}
+      # Community MinIO: global CORS only (bucket CORS is AIStor-paid).
+      MINIO_API_CORS_ALLOW_ORIGIN: "*"
     volumes:
       - ${CIEL_MEDIA_DIR:-./data/media}:/data
     healthcheck:
