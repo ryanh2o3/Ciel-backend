@@ -1,6 +1,6 @@
 # Unraid deploy (Cloudflare Tunnel + Scaleway DNS)
 
-Run the Ciel API + media worker on an Unraid box without opening router ports. Public HTTPS reaches the stack through **Cloudflare Tunnel**; DNS for `ciel-social.eu` stays on **Scaleway Domains**.
+Run the Ciel API + media worker on an Unraid box without opening router ports. Public HTTPS reaches the stack through **Cloudflare Tunnel**. Keep the domain **registered** at Scaleway, but use **Cloudflare DNS** (nameservers) so tunnel CNAMEs resolve.
 
 Homelab hostnames (avoid clobbering live Scaleway `api.` / `media.` records):
 
@@ -72,24 +72,34 @@ You do **not** install Cloudflare Tunnel from the Unraid Apps/CA store for this 
 
 If you instead run `cloudflared` as a separate Unraid container on `bridge`, point services at host IPs/ports and publish those ports — prefer the in-compose service.
 
-## 3. Scaleway DNS CNAMEs
+## 3. DNS must be on Cloudflare (Scaleway CNAME alone is not enough)
 
-In **Scaleway Console → Domains & DNS → `ciel-social.eu`**, add:
+`….cfargotunnel.com` has **no public A/AAAA records** (`dig` returns `NOERROR` with an empty answer). That is normal. Cloudflare only turns the CNAME into a real edge destination when the DNS record lives in **your Cloudflare account** (proxied). A CNAME created only in Scaleway DNS will resolve the alias, then fail in `curl` with “Could not resolve host”.
 
-| Name | Type | Value |
-|------|------|--------|
-| `home-api` | CNAME | `<TUNNEL_UUID>.cfargotunnel.com.` |
-| `home-media` | CNAME | `<TUNNEL_UUID>.cfargotunnel.com.` |
+**Keep the domain registered at Scaleway; point nameservers at Cloudflare.**
 
-TTL can stay default. Do **not** move Scaleway nameservers to Cloudflare unless you want Cloudflare to own all DNS.
+1. Cloudflare Dashboard → **Add a site** → `ciel-social.eu` (Free plan is fine).
+2. Cloudflare shows two nameservers (e.g. `ada.ns.cloudflare.com`, `bob.ns.cloudflare.com`).
+3. In **Scaleway Domains** for `ciel-social.eu`, set the domain’s **nameservers** to those Cloudflare values (replace Scaleway’s NS). Wait until Cloudflare marks the zone **Active**.
+4. In Cloudflare → **DNS** → **Records**, add (or confirm the tunnel wizard created):
+
+| Type | Name | Target | Proxy |
+|------|------|--------|-------|
+| CNAME | `api` | `a1a7d511-7ef1-46b5-9515-f98fe3b788a9.cfargotunnel.com` | **Proxied** (orange cloud) |
+| CNAME | `media` | `a1a7d511-7ef1-46b5-9515-f98fe3b788a9.cfargotunnel.com` | **Proxied** (orange cloud) |
+
+5. Remove the old Scaleway-zone CNAMEs if they still exist after the NS cutover (Cloudflare is authoritative now).
 
 Verify:
 
 ```bash
-dig +short home-api.ciel-social.eu CNAME
-dig +short home-media.ciel-social.eu CNAME
+dig +short api.ciel-social.eu          # should return Cloudflare anycast IPs
+curl -sS https://api.ciel-social.eu/health
 ```
 
+Tunnel public hostnames must still point at `http://api:8080` and `http://minio:9000`. Set `.env` `S3_ENDPOINT=https://media.ciel-social.eu` to match.
+
+**Alternative (keep Scaleway nameservers):** Cloudflare [Partial DNS / CNAME setup](https://developers.cloudflare.com/cloudflare-one/faq/cloudflare-tunnels-faq/#how-can-tunnel-be-used-with-partial-dns-cname-setup) — at Scaleway, CNAME to `api.ciel-social.eu.cdn.cloudflare.net.` (not `….cfargotunnel.com`). Full setup above is simpler.
 ## 4. Secrets and `.env`
 
 On the Unraid host, in the backend directory:

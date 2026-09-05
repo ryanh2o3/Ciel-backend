@@ -92,7 +92,7 @@ impl AppConfig {
             paseto_refresh_key,
             access_ttl_minutes: env_or_parse("ACCESS_TTL_MINUTES", "15")?,
             refresh_ttl_days: env_or_parse("REFRESH_TTL_DAYS", "30")?,
-            ip_signup_rate_limit: env_or_parse("IP_SIGNUP_RATE_LIMIT", "3")?,
+            ip_signup_rate_limit: env_or_parse("IP_SIGNUP_RATE_LIMIT", "10")?,
             s3_force_path_style: env_or("S3_FORCE_PATH_STYLE", "false") == "true",
             trusted_proxy_cidrs: parse_trusted_proxy_cidrs(&env_or("TRUSTED_PROXY_CIDRS", ""))?,
             notification_queue_capacity: env_or_parse("NOTIFICATION_QUEUE_CAPACITY", "2048")?,

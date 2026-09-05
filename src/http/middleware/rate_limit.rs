@@ -46,14 +46,15 @@ fn ip_rate_limit_config(
 ) -> Option<(&'static str, u32, RateWindow)> {
     let p = logical_path(path);
     match (p, method) {
-        ("/auth/login", "POST") => Some(("login", 10, RateWindow::Hour)),
-        ("/auth/refresh", "POST") => Some(("auth_refresh", 30, RateWindow::Hour)),
-        ("/auth/revoke", "POST") => Some(("auth_revoke", 30, RateWindow::Hour)),
+        // Shared NAT / flaky first-run auth should not burn the whole hour.
+        ("/auth/login", "POST") => Some(("login", 30, RateWindow::Hour)),
+        ("/auth/refresh", "POST") => Some(("auth_refresh", 120, RateWindow::Hour)),
+        ("/auth/revoke", "POST") => Some(("auth_revoke", 60, RateWindow::Hour)),
         ("/users", "POST") => Some(("signup", ip_signup_limit, RateWindow::Day)),
         ("/health", "GET") => Some(("health", 60, RateWindow::Minute)),
-        ("/account/device/register", "POST") => Some(("device_register", 30, RateWindow::Hour)),
+        ("/account/device/register", "POST") => Some(("device_register", 60, RateWindow::Hour)),
         (p, "GET") if p.starts_with("/invites/validate/") => {
-            Some(("invite_validate", 60, RateWindow::Hour))
+            Some(("invite_validate", 120, RateWindow::Hour))
         }
         _ => None,
     }
