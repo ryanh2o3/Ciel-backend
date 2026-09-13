@@ -1,0 +1,70 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ciel-api-dotnet
+  namespace: ciel
+  labels:
+    app: ciel-api
+    impl: dotnet
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ciel-api
+      impl: dotnet
+  template:
+    metadata:
+      labels:
+        app: ciel-api
+        impl: dotnet
+    spec:
+      containers:
+        - name: api
+          image: ciel-api-dotnet:local
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: ASPNETCORE_URLS
+              value: http://0.0.0.0:8080
+            - name: CIEL_SERVED_BY
+              value: dotnet
+          envFrom:
+            - secretRef:
+                name: ciel-env
+          ports:
+            - containerPort: 8080
+              name: http
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 150m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 768Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ciel-api-dotnet
+  namespace: ciel
+  labels:
+    impl: dotnet
+spec:
+  selector:
+    app: ciel-api
+    impl: dotnet
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http

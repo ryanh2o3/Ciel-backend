@@ -3,3 +3,4 @@ pub mod ban;
 pub mod metrics;
 pub mod request_context;
 pub mod security;
+pub mod served_by;

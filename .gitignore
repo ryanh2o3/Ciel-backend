@@ -5,6 +5,15 @@
 /target/
 .claude
 
+# Polyglot ports
+spring/target/
+spring/.idea/
+dotnet/**/bin/
+dotnet/**/obj/
+k8s/01-secret.yaml
+k8s/*secrets*.yaml
+!k8s/01-secret.example.yaml
+
 # Terraform
 *.tfvars
 !*.tfvars.example

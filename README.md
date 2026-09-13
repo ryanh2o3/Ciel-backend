@@ -23,6 +23,22 @@ This has not been deployed to cloud services yet. Still working on the ios and a
 - Home feed
 - Media upload and processing pipeline
 
+## Polyglot APIs (learning)
+
+This repo also contains parity HTTP ports that share the same Postgres / Redis / S3 / SQS contracts:
+
+| Impl | Path | Role |
+|------|------|------|
+| Rust | `src/` | Full API + media worker + cleanup |
+| Spring | `spring/` | Parity `/v1` API (auth, users, posts, feed, media) |
+| .NET | `dotnet/` | Same parity subset |
+
+Shared contract: [`docs/CONTRACT.md`](docs/CONTRACT.md). Unraid k3s + opaque Traefik routing: [`docs/UNRAID_K3S.md`](docs/UNRAID_K3S.md), manifests in [`k8s/`](k8s/). Debug with `X-Ciel-Backend: rust|spring|dotnet`; responses include `X-Ciel-Served-By`.
+
+```bash
+./scripts/parity-check.sh   # BASE_URL=… EMAIL=… PASSWORD=…
+```
+
 ## Scale-ready architecture
 
 Ciel is designed to be cost-effective at launch while keeping the same core architecture as it scales to millions of users. The system stays a modular monolith for simplicity, but with clear async boundaries so each worker can scale independently without a rearchitecture.

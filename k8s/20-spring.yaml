@@ -1,0 +1,70 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ciel-api-spring
+  namespace: ciel
+  labels:
+    app: ciel-api
+    impl: spring
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ciel-api
+      impl: spring
+  template:
+    metadata:
+      labels:
+        app: ciel-api
+        impl: spring
+    spec:
+      containers:
+        - name: api
+          image: ciel-api-spring:local
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: SERVER_PORT
+              value: "8080"
+            - name: CIEL_SERVED_BY
+              value: spring
+          envFrom:
+            - secretRef:
+                name: ciel-env
+          ports:
+            - containerPort: 8080
+              name: http
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 150m
+              memory: 384Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ciel-api-spring
+  namespace: ciel
+  labels:
+    impl: spring
+spec:
+  selector:
+    app: ciel-api
+    impl: spring
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http

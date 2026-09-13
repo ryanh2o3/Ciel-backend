@@ -1,0 +1,110 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ciel-api-rust
+  namespace: ciel
+  labels:
+    app: ciel-api
+    impl: rust
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ciel-api
+      impl: rust
+  template:
+    metadata:
+      labels:
+        app: ciel-api
+        impl: rust
+    spec:
+      containers:
+        - name: api
+          image: ghcr.io/ryanh2o3/ciel-backend:main
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: APP_MODE
+              value: api
+            - name: HTTP_ADDR
+              value: 0.0.0.0:8080
+            - name: CIEL_SERVED_BY
+              value: rust
+          envFrom:
+            - secretRef:
+                name: ciel-env
+          ports:
+            - containerPort: 8080
+              name: http
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ciel-api-rust
+  namespace: ciel
+  labels:
+    impl: rust
+spec:
+  selector:
+    app: ciel-api
+    impl: rust
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ciel-worker-rust
+  namespace: ciel
+  labels:
+    app: ciel-worker
+    impl: rust
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ciel-worker
+      impl: rust
+  template:
+    metadata:
+      labels:
+        app: ciel-worker
+        impl: rust
+    spec:
+      containers:
+        - name: worker
+          image: ghcr.io/ryanh2o3/ciel-backend:main
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: APP_MODE
+              value: worker
+          envFrom:
+            - secretRef:
+                name: ciel-env
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi

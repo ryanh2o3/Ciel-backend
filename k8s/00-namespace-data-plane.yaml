@@ -1,0 +1,8 @@
+# Namespace for polyglot Ciel APIs.
+# Data plane (Postgres/Redis/MinIO/ElasticMQ) stays on Unraid Compose — see docs/UNRAID_K3S.md.
+# Put real hostnames/IPs in the Secret (DATABASE_URL, REDIS_URL, S3_ENDPOINT, QUEUE_ENDPOINT)
+# rather than inventing cluster DNS for the Compose stack.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ciel
