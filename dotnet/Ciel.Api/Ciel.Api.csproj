@@ -13,22 +13,26 @@
 
   <ItemGroup>
     <!-- Postgres driver (shared schema owned by the Rust migrations). -->
-    <PackageReference Include="Npgsql" Version="8.*" />
+    <PackageReference Include="Npgsql" Version="8.0.5" />
 
     <!-- Redis cache: feed:home:{userId}, presigned:{objectKey}. -->
-    <PackageReference Include="StackExchange.Redis" Version="2.*" />
+    <PackageReference Include="StackExchange.Redis" Version="2.8.16" />
 
     <!-- S3-compatible object storage (Scaleway / MinIO / LocalStack, path-style). -->
-    <PackageReference Include="AWSSDK.S3" Version="3.7.*" />
+    <PackageReference Include="AWSSDK.S3" Version="3.7.405.5" />
 
     <!-- SQS: this API only enqueues MediaJob messages; the Rust worker consumes them. -->
-    <PackageReference Include="AWSSDK.SQS" Version="3.7.*" />
+    <PackageReference Include="AWSSDK.SQS" Version="3.7.400.55" />
 
     <!-- PASETO v4.local tokens (access + refresh), matching the Rust `pasetors` crate contract. -->
-    <PackageReference Include="Paseto.Core" Version="1.*" />
+    <PackageReference Include="Paseto.Core" Version="1.4.0" />
 
     <!-- Argon2id PHC-string password hashing, cross-compatible with Rust's `argon2` crate. -->
-    <PackageReference Include="Konscious.Security.Cryptography.Argon2" Version="1.*" />
+    <PackageReference Include="Konscious.Security.Cryptography.Argon2" Version="1.3.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Ciel.Api.Tests" />
   </ItemGroup>
 
 </Project>

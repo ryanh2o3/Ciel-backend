@@ -5,14 +5,17 @@ using Ciel.Api.Config;
 
 namespace Ciel.Api.Services;
 
-public sealed class StorageService
+public sealed class StorageService : IDisposable
 {
     private readonly IAmazonS3 _client;
     private readonly string _bucket;
     private readonly string? _publicEndpoint;
+    private readonly ILogger<StorageService> _logger;
+    private bool _disposed;
 
-    public StorageService(AppConfig config)
+    public StorageService(AppConfig config, ILogger<StorageService> logger)
     {
+        _logger = logger;
         _bucket = config.S3Bucket;
         _publicEndpoint = config.S3PublicEndpoint;
 
@@ -53,7 +56,17 @@ public sealed class StorageService
             Expires = DateTime.UtcNow.AddSeconds(expiresSeconds),
         };
 
-        var url = _client.GetPreSignedURL(request);
+        string url;
+        try
+        {
+            url = _client.GetPreSignedURL(request);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "failed to presign PUT url for {ObjectKey}", objectKey);
+            throw;
+        }
+
         var headers = new List<(string, string)>
         {
             ("Content-Type", contentType),
@@ -72,7 +85,17 @@ public sealed class StorageService
             Expires = DateTime.UtcNow.AddSeconds(expiresSeconds),
         };
 
-        var url = _client.GetPreSignedURL(request);
+        string url;
+        try
+        {
+            url = _client.GetPreSignedURL(request);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "failed to presign GET url for {ObjectKey}", objectKey);
+            throw;
+        }
+
         return RewritePublicEndpoint(url);
     }
 
@@ -96,5 +119,16 @@ public sealed class StorageService
             Port = publicBase.IsDefaultPort ? -1 : publicBase.Port,
         };
         return builder.Uri.ToString();
+    }
+
+    public void Dispose()
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        _disposed = true;
+        _client.Dispose();
     }
 }

@@ -35,19 +35,8 @@ public static class MediaEndpoints
         }
 
         var userId = AuthHttpContext.Require(ctx).UserId;
-        try
-        {
-            var intent = await media.CreateUploadAsync(userId, req.ContentType, req.Bytes, ct);
-            return Results.Json(intent);
-        }
-        catch (ApiException)
-        {
-            throw;
-        }
-        catch
-        {
-            throw ApiException.BadRequest("invalid upload request");
-        }
+        var intent = await media.CreateUploadAsync(userId, req.ContentType, req.Bytes, ct);
+        return Results.Json(intent);
     }
 
     private static async Task<IResult> CompleteUpload(

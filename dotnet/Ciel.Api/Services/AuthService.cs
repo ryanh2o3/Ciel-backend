@@ -10,12 +10,14 @@ public sealed class AuthService
     private readonly NpgsqlDataSource _db;
     private readonly PasetoService _paseto;
     private readonly CryptoService _crypto;
+    private readonly ILogger<AuthService> _logger;
 
-    public AuthService(NpgsqlDataSource db, PasetoService paseto, CryptoService crypto)
+    public AuthService(NpgsqlDataSource db, PasetoService paseto, CryptoService crypto, ILogger<AuthService> logger)
     {
         _db = db;
         _paseto = paseto;
         _crypto = crypto;
+        _logger = logger;
     }
 
     public async Task<AuthTokenResponse?> LoginAsync(string identifier, string password, CancellationToken ct)
@@ -40,16 +42,19 @@ public sealed class AuthService
         var passwordHash = reader.IsDBNull(1) ? string.Empty : reader.GetString(1);
         var bannedUntil = reader.IsDBNull(2) ? (DateTimeOffset?)null : reader.GetFieldValue<DateTimeOffset>(2);
 
-        if (string.IsNullOrEmpty(passwordHash) || !_crypto.VerifyPassword(password, passwordHash))
+        if (string.IsNullOrEmpty(passwordHash) || !await _crypto.VerifyPasswordAsync(password, passwordHash))
         {
+            _logger.LogWarning("login failed for identifier {Identifier}: bad credentials", identifier);
             return null;
         }
 
         if (bannedUntil is not null && bannedUntil > DateTimeOffset.UtcNow)
         {
+            _logger.LogWarning("login rejected for banned user {UserId}", userId);
             throw ApiException.Forbidden("Your account has been temporarily suspended");
         }
 
+        _logger.LogInformation("user {UserId} logged in", userId);
         return await IssuePairAsync(userId, ct);
     }
 
@@ -119,6 +124,7 @@ public sealed class AuthService
         if (bannedUntil is not null && bannedUntil > DateTimeOffset.UtcNow)
         {
             await tx.RollbackAsync(ct);
+            _logger.LogWarning("refresh rejected for banned user {UserId}", claims.UserId);
             throw ApiException.Forbidden("Your account has been temporarily suspended");
         }
 
@@ -167,15 +173,13 @@ public sealed class AuthService
             return null;
         }
 
+        // Note: this intentionally does NOT filter on banned_until — ban status is
+        // checked separately (AuthEndpointFilter) so banned users get a distinct
+        // 403 "temporarily suspended" instead of a generic 401 "invalid token",
+        // matching Rust's separate ban_check_middleware (src/http/middleware/ban.rs).
         await using var conn = await _db.OpenConnectionAsync(ct);
         await using var cmd = conn.CreateCommand();
-        cmd.CommandText = """
-            SELECT true
-            FROM users u
-            LEFT JOIN user_trust_scores uts ON uts.user_id = u.id
-            WHERE u.id = $1 AND u.deleted_at IS NULL
-              AND (uts.banned_until IS NULL OR uts.banned_until <= now())
-            """;
+        cmd.CommandText = "SELECT true FROM users WHERE id = $1 AND deleted_at IS NULL";
         cmd.Parameters.AddWithValue(userId.Value);
         var result = await cmd.ExecuteScalarAsync(ct);
         return result is null ? null : userId;
@@ -210,7 +214,7 @@ public sealed class AuthService
         string inviteCode,
         CancellationToken ct)
     {
-        var passwordHash = _crypto.HashPassword(password);
+        var passwordHash = await _crypto.HashPasswordAsync(password);
         await using var conn = await _db.OpenConnectionAsync(ct);
         await using var tx = await conn.BeginTransactionAsync(ct);
 
@@ -329,6 +333,7 @@ public sealed class AuthService
         }
 
         await tx.CommitAsync(ct);
+        _logger.LogInformation("user {UserId} signed up with handle {Handle}", user.Id, user.Handle);
         return user;
     }
 

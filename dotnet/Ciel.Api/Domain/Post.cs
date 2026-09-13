@@ -17,7 +17,11 @@ public sealed class Post
     public DateTimeOffset CreatedAt { get; set; }
     public PostVisibility Visibility { get; set; }
 
-    [JsonIgnore]
+    // Rust's `Post::owner_avatar_key` uses `skip_serializing_if = "Option::is_none"`,
+    // so it IS included on the wire (and in the Redis feed cache) whenever present.
+    // A previous unconditional [JsonIgnore] here dropped it from the cache entirely,
+    // breaking avatar URL population on cache hits.
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? OwnerAvatarKey { get; set; }
 
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]

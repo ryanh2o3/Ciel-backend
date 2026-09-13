@@ -13,11 +13,13 @@ public sealed class FeedService
 
     private readonly NpgsqlDataSource _db;
     private readonly IConnectionMultiplexer _redis;
+    private readonly ILogger<FeedService> _logger;
 
-    public FeedService(NpgsqlDataSource db, IConnectionMultiplexer redis)
+    public FeedService(NpgsqlDataSource db, IConnectionMultiplexer redis, ILogger<FeedService> logger)
     {
         _db = db;
         _redis = redis;
+        _logger = logger;
     }
 
     public async Task<(List<Post> Posts, (DateTimeOffset Timestamp, Guid Id)? NextCursor)> GetHomeFeedAsync(
@@ -31,22 +33,24 @@ public sealed class FeedService
 
         if (shouldCache)
         {
-            var db = _redis.GetDatabase();
-            var cached = await db.StringGetAsync(cacheKey);
-            if (!cached.IsNullOrEmpty)
+            try
             {
-                try
+                var db = _redis.GetDatabase();
+                var cached = await db.StringGetAsync(cacheKey);
+                if (!cached.IsNullOrEmpty)
                 {
                     var page = JsonSerializer.Deserialize<CachedHomeFeed>(cached!, CacheJson);
                     if (page?.IntoPage() is { } hit)
                     {
                         return hit;
                     }
+
+                    _logger.LogWarning("feed cache entry for {CacheKey} failed to decode into a valid page", cacheKey);
                 }
-                catch
-                {
-                    // ignore corrupt cache
-                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "ignoring corrupt feed cache entry for {CacheKey}", cacheKey);
             }
         }
 
@@ -120,9 +124,9 @@ public sealed class FeedService
                 var payload = JsonSerializer.Serialize(CachedHomeFeed.FromPage(posts, nextCursor), CacheJson);
                 await _redis.GetDatabase().StringSetAsync(cacheKey, payload, TimeSpan.FromSeconds(FeedCacheTtlSeconds));
             }
-            catch
+            catch (Exception ex)
             {
-                // best-effort cache write
+                _logger.LogWarning(ex, "best-effort feed cache write failed for {CacheKey}", cacheKey);
             }
         }
 

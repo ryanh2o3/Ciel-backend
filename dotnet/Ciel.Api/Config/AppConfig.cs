@@ -1,3 +1,5 @@
+using System.Net;
+
 namespace Ciel.Api.Config;
 
 /// <summary>
@@ -37,6 +39,15 @@ public sealed class AppConfig
 
     /// <summary>Value used for the X-Ciel-Served-By response header (contract: rust|spring|dotnet).</summary>
     public string ServedBy { get; init; } = "dotnet";
+
+    /// <summary>Daily per-IP signup limit (env: IP_SIGNUP_RATE_LIMIT, default 10).</summary>
+    public uint IpSignupRateLimit { get; init; } = 10;
+
+    /// <summary>
+    /// When the immediate peer is in one of these CIDRs, X-Forwarded-For /
+    /// X-Forwarded-Proto are honored (env: TRUSTED_PROXY_CIDRS, comma-separated).
+    /// </summary>
+    public IReadOnlyList<IPNetwork> TrustedProxyCidrs { get; init; } = [];
 
     public static AppConfig FromEnvironment(IConfiguration configuration)
     {
@@ -78,7 +89,31 @@ public sealed class AppConfig
             RefreshTtlDays = long.Parse(EnvOr("REFRESH_TTL_DAYS", "30")),
 
             ServedBy = EnvOr("CIEL_SERVED_BY", "dotnet"),
+            IpSignupRateLimit = uint.Parse(EnvOr("IP_SIGNUP_RATE_LIMIT", "10")),
+            TrustedProxyCidrs = ParseTrustedProxyCidrs(EnvOr("TRUSTED_PROXY_CIDRS", "")),
         };
+    }
+
+    private static List<IPNetwork> ParseTrustedProxyCidrs(string raw)
+    {
+        var result = new List<IPNetwork>();
+        foreach (var part in raw.Split(','))
+        {
+            var trimmed = part.Trim();
+            if (trimmed.Length == 0)
+            {
+                continue;
+            }
+
+            if (!IPNetwork.TryParse(trimmed, out var network))
+            {
+                throw new InvalidOperationException($"invalid CIDR in TRUSTED_PROXY_CIDRS: {trimmed}");
+            }
+
+            result.Add(network);
+        }
+
+        return result;
     }
 
     private static byte[] DecodeKey(string value, string keyName)

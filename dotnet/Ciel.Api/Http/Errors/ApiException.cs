@@ -18,4 +18,17 @@ public sealed class ApiException : Exception
     public static ApiException NotFound(string message) => new(StatusCodes.Status404NotFound, message);
     public static ApiException Conflict(string message) => new(StatusCodes.Status409Conflict, message);
     public static ApiException Internal(string message) => new(StatusCodes.Status500InternalServerError, message);
+
+    public static ApiException TooManyRequests(string message) =>
+        new(StatusCodes.Status429TooManyRequests, message);
+
+    public static ApiException TooManyRequestsWithHeaders(string message, long limit, long remaining) => new(
+        StatusCodes.Status429TooManyRequests,
+        message,
+        new Dictionary<string, string>
+        {
+            ["X-RateLimit-Limit"] = limit.ToString(),
+            ["X-RateLimit-Remaining"] = remaining.ToString(),
+            ["Retry-After"] = "60",
+        });
 }

@@ -7,8 +7,13 @@ namespace Ciel.Api.Services;
 public sealed class PostService
 {
     private readonly NpgsqlDataSource _db;
+    private readonly ILogger<PostService> _logger;
 
-    public PostService(NpgsqlDataSource db) => _db = db;
+    public PostService(NpgsqlDataSource db, ILogger<PostService> logger)
+    {
+        _db = db;
+        _logger = logger;
+    }
 
     public async Task<Post> CreatePostAsync(Guid ownerId, List<Guid> mediaIds, string? caption, CancellationToken ct)
     {
@@ -84,6 +89,7 @@ public sealed class PostService
         }
 
         await tx.CommitAsync(ct);
+        _logger.LogInformation("post {PostId} created by {OwnerId} with {MediaCount} media items", post.Id, ownerId, mediaIds.Count);
         return post;
     }
 
@@ -170,10 +176,11 @@ public sealed class PostService
         return await cmd.ExecuteScalarAsync(ct) is not null;
     }
 
-    private static Post ReadPost(NpgsqlDataReader reader, List<Guid> mediaIds)
+    private Post ReadPost(NpgsqlDataReader reader, List<Guid> mediaIds)
     {
-        var visibility = PostVisibilityDb.FromDb(reader.GetString(3))
-            ?? throw new InvalidOperationException("unknown visibility");
+        var visibilityRaw = reader.GetString(3);
+        var visibility = PostVisibilityDb.FromDb(visibilityRaw)
+            ?? throw LogUnknownVisibility(visibilityRaw);
 
         return new Post
         {
@@ -189,11 +196,12 @@ public sealed class PostService
         };
     }
 
-    private static Post ReadPostWithCounts(NpgsqlDataReader reader, bool withViewerLike)
+    private Post ReadPostWithCounts(NpgsqlDataReader reader, bool withViewerLike)
     {
         var mediaIds = reader.GetFieldValue<Guid[]>(5).ToList();
-        var visibility = PostVisibilityDb.FromDb(reader.GetString(7))
-            ?? throw new InvalidOperationException("unknown visibility");
+        var visibilityRaw = reader.GetString(7);
+        var visibility = PostVisibilityDb.FromDb(visibilityRaw)
+            ?? throw LogUnknownVisibility(visibilityRaw);
 
         var post = new Post
         {
@@ -216,5 +224,11 @@ public sealed class PostService
         }
 
         return post;
+    }
+
+    private InvalidOperationException LogUnknownVisibility(string raw)
+    {
+        _logger.LogError("encountered unknown post visibility value {Visibility} from database", raw);
+        return new InvalidOperationException("unknown visibility");
     }
 }

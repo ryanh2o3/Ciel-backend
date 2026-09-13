@@ -6,34 +6,46 @@ namespace Ciel.Api.Endpoints;
 
 public static class HealthEndpoints
 {
+    private static readonly TimeSpan PingTimeout = TimeSpan.FromSeconds(2);
+
     public static WebApplication MapHealthEndpoints(this WebApplication app)
     {
-        app.MapGet("/health", async (NpgsqlDataSource db, IConnectionMultiplexer redis, CancellationToken ct) =>
+        app.MapGet("/health", async (
+            NpgsqlDataSource db,
+            IConnectionMultiplexer redis,
+            ILogger<Program> logger,
+            CancellationToken ct) =>
         {
             var dbOk = false;
             var redisOk = false;
 
             try
             {
-                await using var conn = await db.OpenConnectionAsync(ct);
+                using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                timeoutCts.CancelAfter(PingTimeout);
+
+                await using var conn = await db.OpenConnectionAsync(timeoutCts.Token);
                 await using var cmd = conn.CreateCommand();
                 cmd.CommandText = "SELECT 1";
-                await cmd.ExecuteScalarAsync(ct);
+                await cmd.ExecuteScalarAsync(timeoutCts.Token);
                 dbOk = true;
             }
-            catch
+            catch (Exception ex)
             {
-                // degraded
+                logger.LogWarning(ex, "health check: database ping failed or timed out");
             }
 
             try
             {
-                _ = await redis.GetDatabase().PingAsync();
+                using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                timeoutCts.CancelAfter(PingTimeout);
+
+                _ = await redis.GetDatabase().PingAsync().WaitAsync(timeoutCts.Token);
                 redisOk = true;
             }
-            catch
+            catch (Exception ex)
             {
-                // degraded
+                logger.LogWarning(ex, "health check: redis ping failed or timed out");
             }
 
             return Results.Json(new HealthResponse
@@ -45,4 +57,3 @@ public static class HealthEndpoints
         return app;
     }
 }
-

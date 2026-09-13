@@ -13,19 +13,22 @@ public sealed class MediaService
     private readonly StorageService _storage;
     private readonly QueueService _queue;
     private readonly AppConfig _config;
+    private readonly ILogger<MediaService> _logger;
 
     public MediaService(
         NpgsqlDataSource db,
         IConnectionMultiplexer redis,
         StorageService storage,
         QueueService queue,
-        AppConfig config)
+        AppConfig config,
+        ILogger<MediaService> logger)
     {
         _db = db;
         _redis = redis;
         _storage = storage;
         _queue = queue;
         _config = config;
+        _logger = logger;
     }
 
     public async Task<UploadIntent> CreateUploadAsync(
@@ -34,8 +37,12 @@ public sealed class MediaService
         long bytes,
         CancellationToken ct)
     {
-        var ext = ExtensionFromContentType(contentType)
-            ?? throw ApiException.BadRequest("invalid upload request");
+        var ext = ExtensionFromContentType(contentType);
+        if (ext is null)
+        {
+            _logger.LogWarning("rejected upload with unsupported content type {ContentType} for owner {OwnerId}", contentType, ownerId);
+            throw ApiException.BadRequest("invalid upload request");
+        }
 
         var uploadId = Guid.NewGuid();
         var objectKey = $"uploads/{ownerId}/{uploadId}.{ext}";
@@ -186,15 +193,41 @@ public sealed class MediaService
 
         var cacheKey = $"presigned:{objectKey}";
         var db = _redis.GetDatabase();
-        var cached = await db.StringGetAsync(cacheKey);
-        if (!cached.IsNullOrEmpty)
+
+        try
         {
-            return cached.ToString();
+            var cached = await db.StringGetAsync(cacheKey);
+            if (!cached.IsNullOrEmpty)
+            {
+                return cached.ToString();
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "presigned URL cache read failed for {ObjectKey}; falling back to S3", objectKey);
         }
 
-        var url = _storage.PresignGet(objectKey, expiresSeconds);
-        var cacheTtl = Math.Max(expiresSeconds - 300, 1);
-        await db.StringSetAsync(cacheKey, url, TimeSpan.FromSeconds(cacheTtl));
+        string url;
+        try
+        {
+            url = _storage.PresignGet(objectKey, expiresSeconds);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "presigned URL generation failed for {ObjectKey}", objectKey);
+            return null;
+        }
+
+        try
+        {
+            var cacheTtl = Math.Max(expiresSeconds - 300, 1);
+            await db.StringSetAsync(cacheKey, url, TimeSpan.FromSeconds(cacheTtl));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "presigned URL cache write failed for {ObjectKey}", objectKey);
+        }
+
         return url;
     }
 
@@ -203,22 +236,48 @@ public sealed class MediaService
         user.AvatarUrl = await GeneratePresignedGetUrlAsync(user.AvatarKey, 14400, ct);
     }
 
+    /// <summary>
+    /// Populates `owner_avatar_url` on each post from `owner_avatar_key`.
+    /// Distinct keys are resolved once (dedupe) and in parallel (Task.WhenAll)
+    /// rather than sequentially per-post, since many posts in a feed page
+    /// typically share the same handful of authors/avatars.
+    /// </summary>
     public async Task PopulatePostAvatarUrlsAsync(IList<Post> posts, CancellationToken ct)
     {
+        var keys = posts
+            .Select(p => p.OwnerAvatarKey)
+            .Where(k => k is not null)
+            .Select(k => k!)
+            .Distinct()
+            .ToList();
+
+        if (keys.Count == 0)
+        {
+            return;
+        }
+
+        var resolved = await Task.WhenAll(keys.Select(async key => (key, url: await GeneratePresignedGetUrlAsync(key, 14400, ct))));
+        var urlByKey = resolved.ToDictionary(r => r.key, r => r.url);
+
         foreach (var post in posts)
         {
-            if (post.OwnerAvatarKey is not null)
+            if (post.OwnerAvatarKey is not null && urlByKey.TryGetValue(post.OwnerAvatarKey, out var url))
             {
-                post.OwnerAvatarUrl = await GeneratePresignedGetUrlAsync(post.OwnerAvatarKey, 14400, ct);
+                post.OwnerAvatarUrl = url;
             }
         }
     }
 
+    /// <summary>Resolves original/thumb/medium URLs in parallel, deduping when keys collide.</summary>
     private async Task<Media> PopulateUrlsAsync(Media media, CancellationToken ct)
     {
-        media.OriginalUrl = await GeneratePresignedGetUrlAsync(media.OriginalKey, 3600, ct);
-        media.ThumbUrl = await GeneratePresignedGetUrlAsync(media.ThumbKey, 3600, ct);
-        media.MediumUrl = await GeneratePresignedGetUrlAsync(media.MediumKey, 3600, ct);
+        var keys = new[] { media.OriginalKey, media.ThumbKey, media.MediumKey }.Distinct().ToList();
+        var resolved = await Task.WhenAll(keys.Select(async key => (key, url: await GeneratePresignedGetUrlAsync(key, 3600, ct))));
+        var urlByKey = resolved.ToDictionary(r => r.key, r => r.url);
+
+        media.OriginalUrl = urlByKey[media.OriginalKey];
+        media.ThumbUrl = urlByKey[media.ThumbKey];
+        media.MediumUrl = urlByKey[media.MediumKey];
         return media;
     }
 

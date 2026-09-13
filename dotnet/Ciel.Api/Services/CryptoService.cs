@@ -6,7 +6,26 @@ namespace Ciel.Api.Services;
 
 public sealed class CryptoService
 {
-    public string HashPassword(string password)
+    /// <summary>
+    /// Argon2id is deliberately expensive (CPU + ~19MB memory per call); running
+    /// it inline on a thread-pool-bound async request would starve the pool
+    /// under load. <c>DenyChildAttach</c> keeps it off the ambient execution
+    /// context (no flowing cancellation/culture) which is what we want for a
+    /// pure CPU-bound background computation.
+    /// </summary>
+    public Task<string> HashPasswordAsync(string password) => Task.Factory.StartNew(
+        () => HashPassword(password),
+        CancellationToken.None,
+        TaskCreationOptions.DenyChildAttach,
+        TaskScheduler.Default);
+
+    public Task<bool> VerifyPasswordAsync(string password, string phc) => Task.Factory.StartNew(
+        () => VerifyPassword(password, phc),
+        CancellationToken.None,
+        TaskCreationOptions.DenyChildAttach,
+        TaskScheduler.Default);
+
+    private string HashPassword(string password)
     {
         var salt = new byte[16];
         RandomNumberGenerator.Fill(salt);
@@ -14,22 +33,25 @@ public sealed class CryptoService
         return FormatPhc(hash, salt, iterations: 2, memoryKb: 19456, parallelism: 1);
     }
 
-    public bool VerifyPassword(string password, string phc)
+    private bool VerifyPassword(string password, string phc)
     {
         try
         {
+            // PHC format: $argon2id$v=19$m=..,t=..,p=..$<salt>$<hash> — after
+            // Split(RemoveEmptyEntries) the leading '$' disappears, so the 5
+            // parts are indexed [0]=argon2id [1]=v=19 [2]=params [3]=salt [4]=hash.
             var parts = phc.Split('$', StringSplitOptions.RemoveEmptyEntries);
             if (parts.Length < 5 || !parts[0].Equals("argon2id", StringComparison.OrdinalIgnoreCase))
             {
                 return false;
             }
 
-            var paramParts = parts[3].Split(',');
+            var paramParts = parts[2].Split(',');
             var memoryKb = ParseParam(paramParts, 'm');
             var iterations = ParseParam(paramParts, 't');
             var parallelism = ParseParam(paramParts, 'p');
-            var salt = Convert.FromBase64String(parts[4]);
-            var expected = Convert.FromBase64String(parts[5]);
+            var salt = Convert.FromBase64String(parts[3]);
+            var expected = Convert.FromBase64String(parts[4]);
             var actual = HashWithParams(password, salt, iterations, memoryKb, parallelism);
             return CryptographicOperations.FixedTimeEquals(actual, expected);
         }

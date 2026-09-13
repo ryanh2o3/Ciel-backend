@@ -25,6 +25,38 @@ dotnet run
 
 Health: `GET http://localhost:8080/health`
 
+### Listen address
+
+The server binds to whatever **`ASPNETCORE_URLS`** says (ASP.NET Core's standard
+listen-address variable), e.g. `ASPNETCORE_URLS=http://0.0.0.0:8080`. In
+Kubernetes/production this is set by the deployment manifest — there is no
+code-level default beyond what the base image / hosting environment provides.
+`HTTP_ADDR` (used by the Rust/Spring stacks) is still read into `AppConfig` for
+parity but is intentionally **not** wired to `app.Urls`, to avoid two
+competing sources of truth for the bind address.
+
+### Trusted proxies / rate limiting
+
+Set `TRUSTED_PROXY_CIDRS` (comma-separated CIDRs, e.g.
+`10.0.0.0/8,172.16.0.0/12`) so `X-Forwarded-For` / `X-Forwarded-Proto` are
+honored only when the immediate peer is one of your load balancers — this
+matches the Rust stack's `TRUSTED_PROXY_CIDRS` handling
+(src/http/middleware/request_context.rs) and determines both the client IP
+used for IP-based rate limiting and whether HTTPS is enforced. `IP_SIGNUP_RATE_LIMIT`
+(default `10`) caps signups per IP per day.
+
+## Tests
+
+```bash
+cd dotnet
+dotnet test
+```
+
+`Ciel.Api.Tests` covers `CursorCodec`, `PasetoService` (mint/verify), `CryptoService`
+(Argon2id hash/verify round trip — this is a regression test for a real off-by-one
+bug in PHC-string parsing), the feed-cache JSON contract for `owner_avatar_key`,
+rate-limit route→action mapping, and trusted-proxy `X-Forwarded-For` parsing.
+
 ## Docker
 
 ```bash

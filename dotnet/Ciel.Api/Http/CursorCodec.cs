@@ -21,7 +21,11 @@ public static class CursorCodec
         var timestampPart = cursor[..slash];
         var idPart = cursor[(slash + 1)..];
 
-        if (!DateTimeOffset.TryParse(timestampPart, out var timestamp) ||
+        if (!DateTimeOffset.TryParse(
+                timestampPart,
+                System.Globalization.CultureInfo.InvariantCulture,
+                System.Globalization.DateTimeStyles.RoundtripKind | System.Globalization.DateTimeStyles.AssumeUniversal,
+                out var timestamp) ||
             !Guid.TryParse(idPart, out var id))
         {
             throw ApiException.BadRequest("invalid cursor");
