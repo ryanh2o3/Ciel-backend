@@ -8,32 +8,24 @@ Builds the Next.js static export under `docs-site/` and uploads `out/` with **`s
 
 ---
 
-## Publish Docker image to GHCR (`docker-publish.yml`)
+## Publish Docker images to GHCR
 
-Builds the Ciel API/worker image and pushes to **GitHub Container Registry** for Unraid (or any host) to pull.
+Three workflows push amd64 images for Unraid / k3d. No extra secrets beyond `GITHUB_TOKEN` (`packages: write`).
 
-### Triggers
+| Workflow | Image | Triggers |
+|----------|-------|----------|
+| [`docker-publish.yml`](docker-publish.yml) | `ghcr.io/<owner>/ciel-backend` | Rust `src/`, migrations, `Dockerfile`, … |
+| [`docker-publish-spring.yml`](docker-publish-spring.yml) | `ghcr.io/<owner>/ciel-api-spring` | `spring/**` |
+| [`docker-publish-dotnet.yml`](docker-publish-dotnet.yml) | `ghcr.io/<owner>/ciel-api-dotnet` | `dotnet/**` |
 
-- Push to `main` touching `src/`, `migrations/`, `Cargo.*`, `Dockerfile`, or the workflow itself
-- Manual **workflow_dispatch**
+Each runs tests, then Buildx push with tags `:main`, `:latest`, `:sha-<short>` (on `main` or **workflow_dispatch**).
 
-### Pipeline
+### Unraid / k3d consumption
 
-1. **tests** — reuses [`test.yml`](test.yml) (compile, clippy, integration tests)
-2. **build-and-push** — Buildx → `ghcr.io/<owner>/ciel-backend` with tags `:main`, `:latest`, `:sha-<short>`
+- **Compose (Rust-only legacy):** `CIEL_IMAGE=ghcr.io/ryanh2o3/ciel-backend:main` then `docker compose … pull/up`
+- **Polyglot k8s:** manifests in [`k8s/`](../../k8s/) already reference GHCR `:main` — see [docs/UNRAID_K3S.md](../../docs/UNRAID_K3S.md)
 
-Uses `GITHUB_TOKEN` (`packages: write`). No extra secrets required to publish.
-
-### Unraid consumption
-
-Set `CIEL_IMAGE=ghcr.io/ryanh2o3/ciel-backend:main` in `.env`, then:
-
-```bash
-docker compose -f docker-compose.unraid.yml --env-file .env pull api worker
-docker compose -f docker-compose.unraid.yml --env-file .env up -d api worker
-```
-
-See [docs/UNRAID_DEPLOY.md](../../docs/UNRAID_DEPLOY.md) for package visibility / `docker login` notes.
+After first publish, set each GHCR package **Public** (or configure `imagePullSecrets` + a `read:packages` PAT). Details: [docs/UNRAID_DEPLOY.md](../../docs/UNRAID_DEPLOY.md).
 
 ---
 

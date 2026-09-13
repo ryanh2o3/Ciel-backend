@@ -21,7 +21,7 @@ spec:
       containers:
         - name: api
           image: ghcr.io/ryanh2o3/ciel-backend:main
-          imagePullPolicy: IfNotPresent
+          imagePullPolicy: Always
           env:
             - name: APP_MODE
               value: api
@@ -94,7 +94,7 @@ spec:
       containers:
         - name: worker
           image: ghcr.io/ryanh2o3/ciel-backend:main
-          imagePullPolicy: IfNotPresent
+          imagePullPolicy: Always
           env:
             - name: APP_MODE
               value: worker

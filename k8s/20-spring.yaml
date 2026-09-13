@@ -20,8 +20,8 @@ spec:
     spec:
       containers:
         - name: api
-          image: ciel-api-spring:local
-          imagePullPolicy: IfNotPresent
+          image: ghcr.io/ryanh2o3/ciel-api-spring:main
+          imagePullPolicy: Always
           env:
             - name: SERVER_PORT
               value: "8080"

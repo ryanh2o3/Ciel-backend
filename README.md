@@ -30,8 +30,8 @@ This repo also contains parity HTTP ports that share the same Postgres / Redis /
 | Impl | Path | Role |
 |------|------|------|
 | Rust | `src/` | Full API + media worker + cleanup |
-| Spring | `spring/` | Parity `/v1` API (auth, users, posts, feed, media) |
-| .NET | `dotnet/` | Same parity subset |
+| Spring | `spring/` | Parity `/v1` API (auth, users, posts, feed, media) — image via GHCR Actions |
+| .NET | `dotnet/` | Same parity subset — image via GHCR Actions |
 
 Shared contract: [`docs/CONTRACT.md`](docs/CONTRACT.md). Unraid k3s + opaque Traefik routing: [`docs/UNRAID_K3S.md`](docs/UNRAID_K3S.md), manifests in [`k8s/`](k8s/). Debug with `X-Ciel-Backend: rust|spring|dotnet`; responses include `X-Ciel-Served-By`.
 
