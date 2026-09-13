@@ -42,17 +42,14 @@ public class MediaController {
         if (body.getBytes() > props.getUpload().getMaxBytes()) {
             throw ApiException.badRequest("upload exceeds max size");
         }
-        try {
-            return mediaService.createUpload(
-                    auth.userId(),
-                    body.getContentType(),
-                    body.getBytes(),
-                    props.getUpload().getUrlTtlSeconds());
-        } catch (ApiException e) {
-            throw e;
-        } catch (Exception e) {
-            throw ApiException.badRequest("invalid upload request");
-        }
+        // No catch-all here: unsupported content types surface as ApiException
+        // (400) from MediaService, and any other unexpected failure propagates
+        // to ApiExceptionHandler (logged + 500) instead of being masked as 400.
+        return mediaService.createUpload(
+                auth.userId(),
+                body.getContentType(),
+                body.getBytes(),
+                props.getUpload().getUrlTtlSeconds());
     }
 
     @PostMapping("/upload/{id}/complete")

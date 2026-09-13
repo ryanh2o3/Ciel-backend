@@ -18,6 +18,12 @@ public class AppProperties {
     /** Optional shared secret for moderation endpoints (x-admin-token header). Unused by this parity subset. */
     private String adminToken;
 
+    /**
+     * Per-IP signup limit (requests/day) used by {@link com.ciel.web.IpRateLimitFilter}.
+     * Matches Rust's {@code IP_SIGNUP_RATE_LIMIT} (see {@code src/config/mod.rs}).
+     */
+    private long ipSignupRateLimit = 3;
+
     @NestedConfigurationProperty
     private Paseto paseto = new Paseto();
 

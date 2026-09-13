@@ -3,6 +3,8 @@ package com.ciel.app;
 import com.ciel.domain.User;
 import com.ciel.web.dto.AuthTokenResponse;
 import com.ciel.web.error.ApiException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.support.rowset.SqlRowSet;
 import org.springframework.stereotype.Service;
@@ -11,6 +13,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Timestamp;
+import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.Optional;
@@ -18,6 +21,8 @@ import java.util.UUID;
 
 @Service
 public class AuthService {
+
+    private static final Logger log = LoggerFactory.getLogger(AuthService.class);
 
     private final JdbcTemplate jdbc;
     private final PasetoService paseto;
@@ -29,6 +34,15 @@ public class AuthService {
         this.crypto = crypto;
     }
 
+    /**
+     * Validates a PASETO access token and re-checks the account against the
+     * database on every call (not just at token mint time), so a user
+     * deleted or banned mid-session is rejected within one request — this is
+     * the single choke point that every {@code /v1} route under
+     * {@link com.ciel.web.auth.AuthUserResolver} and the rate-limit filters
+     * goes through, matching Rust's {@code authenticate_access_token} (see
+     * {@code src/app/auth.rs}).
+     */
     public Optional<UUID> authenticateAccessToken(String token) {
         Optional<UUID> userId = paseto.verifyAccess(token);
         if (userId.isEmpty()) {
@@ -44,7 +58,24 @@ public class AuthService {
                 """,
                 rs -> rs.next() ? 1 : null,
                 userId.get());
-        return found != null ? userId : Optional.empty();
+        if (found == null) {
+            logIfBanned(userId.get());
+            return Optional.empty();
+        }
+        return userId;
+    }
+
+    /** Best-effort audit log distinguishing "banned" from "deleted" on the rejection path above. */
+    private void logIfBanned(UUID userId) {
+        try {
+            Timestamp banned = jdbc.queryForObject(
+                    "SELECT banned_until FROM user_trust_scores WHERE user_id = ?", Timestamp.class, userId);
+            if (banned != null && banned.toInstant().isAfter(Instant.now())) {
+                log.warn("rejected access token for banned user {} (banned_until={})", userId, banned.toInstant());
+            }
+        } catch (Exception ignored) {
+            // No trust-score row or lookup failure: not worth failing the request over a log line.
+        }
     }
 
     public AuthTokenResponse login(String email, String password) {

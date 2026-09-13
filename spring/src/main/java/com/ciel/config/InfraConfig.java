@@ -57,6 +57,14 @@ public class InfraConfig implements WebMvcConfigurer {
         return builder.build();
     }
 
+    /**
+     * Always signs against the <b>internal</b> {@code S3_ENDPOINT} — matching Rust's
+     * {@code ObjectStorage}, which never signs against the public endpoint. PUT (upload)
+     * URLs are returned as-signed (see {@code MediaService#createUpload}); GET URLs are
+     * rewritten to the public endpoint only *after* signing, in
+     * {@code MediaService#rewritePublicEndpoint} (mirrors Rust's {@code media.rs}
+     * {@code rewrite_presigned_url}).
+     */
     @Bean
     public S3Presigner s3Presigner() {
         var builder = S3Presigner.builder()
@@ -65,10 +73,7 @@ public class InfraConfig implements WebMvcConfigurer {
                 .serviceConfiguration(S3Configuration.builder()
                         .pathStyleAccessEnabled(props.getS3().isForcePathStyle())
                         .build());
-        String endpoint = props.getS3().getPublicEndpoint();
-        if (endpoint == null || endpoint.isBlank()) {
-            endpoint = props.getS3().getEndpoint();
-        }
+        String endpoint = props.getS3().getEndpoint();
         if (endpoint != null && !endpoint.isBlank()) {
             builder.endpointOverride(URI.create(endpoint));
         }

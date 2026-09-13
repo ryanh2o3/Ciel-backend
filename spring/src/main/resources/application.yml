@@ -41,6 +41,7 @@ logging:
 ciel:
   served-by: ${CIEL_SERVED_BY:spring}
   admin-token: ${ADMIN_TOKEN:}
+  ip-signup-rate-limit: ${IP_SIGNUP_RATE_LIMIT:3}
   paseto:
     access-key: ${PASETO_ACCESS_KEY:}
     refresh-key: ${PASETO_REFRESH_KEY:}

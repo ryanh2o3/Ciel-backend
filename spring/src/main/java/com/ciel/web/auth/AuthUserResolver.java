@@ -35,10 +35,12 @@ public class AuthUserResolver implements HandlerMethodArgumentResolver {
         HttpServletRequest request = webRequest.getNativeRequest(HttpServletRequest.class);
         String header = request != null ? request.getHeader("Authorization") : null;
 
-        if (header == null || !header.regionMatches(true, 0, "Bearer ", 0, 7)) {
-            throw ApiException.unauthorized("missing Authorization header");
-        }
-        String token = header.substring(7).trim();
+        String token = BearerAuth.extractToken(header)
+                .orElseThrow(() -> ApiException.unauthorized("missing Authorization header"));
+        // authenticateAccessToken already re-validates the user against the DB
+        // (deleted_at / banned_until) on every request, so a token minted
+        // before a ban takes effect stops working within one request of the
+        // ban being applied — see AuthService#authenticateAccessToken.
         UUID userId = authService
                 .authenticateAccessToken(token)
                 .orElseThrow(() -> ApiException.unauthorized("invalid token"));

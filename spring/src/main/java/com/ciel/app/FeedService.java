@@ -172,6 +172,11 @@ public class FeedService {
     @JsonInclude(JsonInclude.Include.NON_NULL)
     static class CachedHomeFeed {
         private List<Post> posts;
+
+        // Nanoseconds since the Unix epoch, matching Rust's cache encoding
+        // (OffsetDateTime -> i64 nanos) exactly. A signed 64-bit nanosecond
+        // count only overflows around the year 2262, so this is safe for the
+        // foreseeable lifetime of the service in both implementations.
         private Long nextCursorNanos;
         private UUID nextCursorId;
 

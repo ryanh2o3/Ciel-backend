@@ -7,6 +7,7 @@ import com.ciel.app.PostService;
 import com.ciel.domain.Comment;
 import com.ciel.domain.Post;
 import com.ciel.web.auth.AuthUser;
+import com.ciel.web.auth.BearerAuth;
 import com.ciel.web.dto.CommentRequest;
 import com.ciel.web.dto.CreatePostRequest;
 import com.ciel.web.dto.LikeResponse;
@@ -53,9 +54,7 @@ public class PostController {
         if (body.getMediaIds().size() > 10) {
             throw ApiException.badRequest("maximum 10 images per post");
         }
-        if (body.getCaption() != null && body.getCaption().length() > 2200) {
-            throw ApiException.badRequest("caption must be at most 2200 characters");
-        }
+        RequestValidation.validateMaxLen("caption", body.getCaption(), RequestValidation.MAX_CAPTION_LEN);
         Post post = postService.createPost(auth.userId(), body.getMediaIds(), body.getCaption());
         feedService.refreshHomeFeed(auth.userId());
         mediaService.populatePostAvatarUrls(java.util.List.of(post));
@@ -94,7 +93,7 @@ public class PostController {
         if (body.getBody() == null || body.getBody().trim().isEmpty()) {
             throw ApiException.badRequest("comment body cannot be empty");
         }
-        if (body.getBody().length() > 1000) {
+        if (body.getBody().length() > RequestValidation.MAX_COMMENT_LEN) {
             throw ApiException.badRequest("comment body exceeds 1000 characters");
         }
         ensureVisible(id, auth.userId());
@@ -108,9 +107,6 @@ public class PostController {
     }
 
     private Optional<UUID> optionalViewer(String authorization) {
-        if (authorization == null || !authorization.regionMatches(true, 0, "Bearer ", 0, 7)) {
-            return Optional.empty();
-        }
-        return authService.authenticateAccessToken(authorization.substring(7).trim());
+        return BearerAuth.extractToken(authorization).flatMap(authService::authenticateAccessToken);
     }
 }

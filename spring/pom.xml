@@ -32,6 +32,12 @@
             <artifactId>spring-boot-starter-web</artifactId>
         </dependency>
 
+        <!-- Bean validation (jakarta.validation) -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-validation</artifactId>
+        </dependency>
+
         <!-- JDBC access (JdbcTemplate) -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
@@ -40,7 +46,8 @@
         <dependency>
             <groupId>org.postgresql</groupId>
             <artifactId>postgresql</artifactId>
-            <scope>runtime</scope>
+            <!-- Compile scope (not runtime): UserController inspects PSQLException
+                 directly to map unique-constraint violations (SQLState 23505). -->
         </dependency>
 
         <!-- Redis -->
