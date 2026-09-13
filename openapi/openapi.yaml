@@ -1,0 +1,616 @@
+openapi: 3.0.3
+info:
+  title: Ciel API
+  version: "1.0.0"
+  description: |
+    Cross-implementation contract for Rust / Spring / .NET Ciel backends.
+    Full route list mirrors src/http/routes.rs. Parity subset for Spring/.NET
+    Phase 2–3 is marked x-parity-required.
+servers:
+  - url: https://home-api.ciel-social.eu
+  - url: http://localhost:8080
+tags:
+  - name: health
+  - name: auth
+  - name: users
+  - name: posts
+  - name: feed
+  - name: media
+paths:
+  /health:
+    get:
+      tags: [health]
+      x-parity-required: true
+      summary: Liveness
+      responses:
+        "200":
+          description: OK
+          content:
+            text/plain:
+              schema:
+                type: string
+  /v1/auth/login:
+    post:
+      tags: [auth]
+      x-parity-required: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+      responses:
+        "200":
+          description: Tokens
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthTokenResponse"
+        "401":
+          $ref: "#/components/responses/Error"
+  /v1/auth/refresh:
+    post:
+      tags: [auth]
+      x-parity-required: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refresh_token]
+              properties:
+                refresh_token:
+                  type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthTokenResponse"
+          description: New tokens
+        "401":
+          $ref: "#/components/responses/Error"
+  /v1/auth/revoke:
+    post:
+      tags: [auth]
+      x-parity-required: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refresh_token]
+              properties:
+                refresh_token:
+                  type: string
+      responses:
+        "204":
+          description: Revoked
+  /v1/auth/me:
+    get:
+      tags: [auth]
+      x-parity-required: true
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+          description: Current user
+  /v1/invites/validate/{code}:
+    get:
+      tags: [auth]
+      parameters:
+        - name: code
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Invite validity
+  /v1/users:
+    post:
+      tags: [users]
+      x-parity-required: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateUserRequest"
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+          description: Created
+  /v1/users/{id}:
+    get:
+      tags: [users]
+      x-parity-required: true
+      parameters:
+        - $ref: "#/components/parameters/UuidPath"
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PublicUser"
+          description: Public profile
+    patch:
+      tags: [users]
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/UuidPath"
+      responses:
+        "200":
+          description: Updated
+  /v1/users/{id}/posts:
+    get:
+      tags: [users]
+      parameters:
+        - $ref: "#/components/parameters/UuidPath"
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
+      responses:
+        "200":
+          description: User posts page
+  /v1/users/{id}/follow:
+    post:
+      tags: [users]
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/UuidPath"
+      responses:
+        "204":
+          description: Followed
+  /v1/users/{id}/unfollow:
+    post:
+      tags: [users]
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/UuidPath"
+      responses:
+        "204":
+          description: Unfollowed
+  /v1/posts:
+    post:
+      tags: [posts]
+      x-parity-required: true
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreatePostRequest"
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Post"
+          description: Created
+  /v1/posts/{id}:
+    get:
+      tags: [posts]
+      x-parity-required: true
+      parameters:
+        - $ref: "#/components/parameters/UuidPath"
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Post"
+          description: Post
+    patch:
+      tags: [posts]
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/UuidPath"
+      responses:
+        "200":
+          description: Updated caption
+    delete:
+      tags: [posts]
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/UuidPath"
+      responses:
+        "204":
+          description: Deleted
+  /v1/posts/{id}/like:
+    post:
+      tags: [posts]
+      x-parity-required: true
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/UuidPath"
+      responses:
+        "204":
+          description: Liked
+    delete:
+      tags: [posts]
+      x-parity-required: true
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/UuidPath"
+      responses:
+        "204":
+          description: Unliked
+  /v1/posts/{id}/comment:
+    post:
+      tags: [posts]
+      x-parity-required: true
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/UuidPath"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [body]
+              properties:
+                body:
+                  type: string
+      responses:
+        "200":
+          description: Comment created
+  /v1/feed:
+    get:
+      tags: [feed]
+      x-parity-required: true
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListPosts"
+          description: Home feed
+  /v1/feed/refresh:
+    post:
+      tags: [feed]
+      x-parity-required: true
+      security:
+        - bearerAuth: []
+      responses:
+        "204":
+          description: Cache invalidated
+  /v1/media/upload:
+    post:
+      tags: [media]
+      x-parity-required: true
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UploadRequest"
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UploadIntent"
+          description: Presigned upload
+  /v1/media/upload/{id}/complete:
+    post:
+      tags: [media]
+      x-parity-required: true
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/UuidPath"
+      responses:
+        "202":
+          description: Queued for processing
+  /v1/media/upload/{id}/status:
+    get:
+      tags: [media]
+      x-parity-required: true
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/UuidPath"
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UploadStatus"
+          description: Upload status
+  /v1/media/{id}:
+    get:
+      tags: [media]
+      x-parity-required: true
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/UuidPath"
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Media"
+          description: Media asset
+    delete:
+      tags: [media]
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/UuidPath"
+      responses:
+        "204":
+          description: Deleted
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+  parameters:
+    UuidPath:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    Limit:
+      name: limit
+      in: query
+      schema:
+        type: integer
+        default: 30
+        maximum: 200
+    Cursor:
+      name: cursor
+      in: query
+      description: "{rfc3339}/{uuid}"
+      schema:
+        type: string
+  responses:
+    Error:
+      description: Error
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorBody"
+  schemas:
+    ErrorBody:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+        password:
+          type: string
+    AuthTokenResponse:
+      type: object
+      required: [access_token, refresh_token, access_expires_at, refresh_expires_at]
+      properties:
+        access_token:
+          type: string
+        refresh_token:
+          type: string
+        access_expires_at:
+          type: string
+          format: date-time
+        refresh_expires_at:
+          type: string
+          format: date-time
+    CreateUserRequest:
+      type: object
+      required: [handle, email, display_name, password, invite_code]
+      properties:
+        handle:
+          type: string
+        email:
+          type: string
+        display_name:
+          type: string
+        bio:
+          type: string
+          nullable: true
+        avatar_key:
+          type: string
+          nullable: true
+        password:
+          type: string
+        invite_code:
+          type: string
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        handle:
+          type: string
+        email:
+          type: string
+        display_name:
+          type: string
+        bio:
+          type: string
+          nullable: true
+        avatar_url:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+    PublicUser:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        handle:
+          type: string
+        display_name:
+          type: string
+        bio:
+          type: string
+          nullable: true
+        avatar_url:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        followers_count:
+          type: integer
+        following_count:
+          type: integer
+        posts_count:
+          type: integer
+    CreatePostRequest:
+      type: object
+      required: [media_ids]
+      properties:
+        media_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+        caption:
+          type: string
+          nullable: true
+    Post:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        owner_id:
+          type: string
+          format: uuid
+        media_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+        caption:
+          type: string
+          nullable: true
+        visibility:
+          type: string
+          enum: [Public, FollowersOnly]
+        created_at:
+          type: string
+          format: date-time
+    ListPosts:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Post"
+        next_cursor:
+          type: string
+          nullable: true
+    UploadRequest:
+      type: object
+      required: [content_type, bytes]
+      properties:
+        content_type:
+          type: string
+        bytes:
+          type: integer
+          format: int64
+    UploadIntent:
+      type: object
+      properties:
+        upload_id:
+          type: string
+          format: uuid
+        object_key:
+          type: string
+        upload_url:
+          type: string
+        expires_in_seconds:
+          type: integer
+        headers:
+          type: array
+          items:
+            type: object
+            properties:
+              name:
+                type: string
+              value:
+                type: string
+    UploadStatus:
+      type: object
+      properties:
+        status:
+          type: string
+        processed_media_id:
+          type: string
+          format: uuid
+          nullable: true
+    Media:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        owner_id:
+          type: string
+          format: uuid
+        original_key:
+          type: string
+        thumb_key:
+          type: string
+        medium_key:
+          type: string
+        width:
+          type: integer
+        height:
+          type: integer
+        bytes:
+          type: integer
+          format: int64
+        created_at:
+          type: string
+          format: date-time
+        thumb_url:
+          type: string
+          nullable: true
+        medium_url:
+          type: string
+          nullable: true
+        original_url:
+          type: string
+          nullable: true

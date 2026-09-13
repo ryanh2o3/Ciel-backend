@@ -1,0 +1,66 @@
+server:
+  port: ${SERVER_PORT:8080}
+  # HTTP_ADDR (Rust-style "host:port") is honored by CielApplication if set;
+  # SERVER_PORT above is the Spring-native override.
+
+spring:
+  application:
+    name: ciel-backend-spring
+  datasource:
+    # Overridden at startup by DatabaseUrlEnvironmentPostProcessor when DATABASE_URL
+    # (postgres://user:pass@host:port/db) is set. Falls back to SPRING_DATASOURCE_* /
+    # these defaults otherwise.
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://127.0.0.1:5432/ciel}
+    username: ${SPRING_DATASOURCE_USERNAME:ciel}
+    password: ${SPRING_DATASOURCE_PASSWORD:ciel}
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: ${DB_MAX_CONNECTIONS:25}
+      connection-timeout: ${DB_CONNECT_TIMEOUT_MS:5000}
+      max-lifetime: ${DB_MAX_LIFETIME_MS:1800000}
+      idle-timeout: ${DB_IDLE_TIMEOUT_MS:300000}
+  data:
+    redis:
+      # Accepts redis://[:password@]host:port[/db]
+      url: ${REDIS_URL:redis://127.0.0.1:6379}
+  jackson:
+    property-naming-strategy: SNAKE_CASE
+    default-property-inclusion: non_null
+    serialization:
+      write-dates-as-timestamps: false
+
+management:
+  endpoints:
+    enabled-by-default: false
+
+logging:
+  level:
+    root: INFO
+    com.ciel: INFO
+
+ciel:
+  served-by: ${CIEL_SERVED_BY:spring}
+  admin-token: ${ADMIN_TOKEN:}
+  ip-signup-rate-limit: ${IP_SIGNUP_RATE_LIMIT:3}
+  paseto:
+    access-key: ${PASETO_ACCESS_KEY:}
+    refresh-key: ${PASETO_REFRESH_KEY:}
+    access-ttl-minutes: ${ACCESS_TTL_MINUTES:15}
+    refresh-ttl-days: ${REFRESH_TTL_DAYS:30}
+  s3:
+    endpoint: ${S3_ENDPOINT:http://127.0.0.1:4566}
+    public-endpoint: ${S3_PUBLIC_ENDPOINT:}
+    region: ${S3_REGION:fr-par}
+    bucket: ${S3_BUCKET:ciel-media}
+    access-key: ${S3_ACCESS_KEY:}
+    secret-key: ${S3_SECRET_KEY:}
+    force-path-style: ${S3_FORCE_PATH_STYLE:true}
+  queue:
+    endpoint: ${QUEUE_ENDPOINT:http://127.0.0.1:4566}
+    region: ${QUEUE_REGION:${S3_REGION:fr-par}}
+    name: ${QUEUE_NAME:media-processing}
+    access-key: ${SQS_ACCESS_KEY:}
+    secret-key: ${SQS_SECRET_KEY:}
+  upload:
+    url-ttl-seconds: ${UPLOAD_URL_TTL_SECONDS:900}
+    max-bytes: ${UPLOAD_MAX_BYTES:10485760}

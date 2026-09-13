@@ -157,6 +157,8 @@ pub fn router(state: AppState) -> Router {
         .nest("/v1", v1_routes)
         .with_state(state)
         // Global middleware layers (applied to all routes)
+        // Polyglot observability (opaque LB debugging)
+        .layer(axum_middleware::from_fn(middleware::served_by::served_by_middleware))
         // Metrics (Prometheus)
         .layer(axum_middleware::from_fn(middleware::metrics::metrics_middleware))
         // CORS — no web origins allowed (mobile-only API)
@@ -172,7 +174,9 @@ pub fn router(state: AppState) -> Router {
                 .allow_headers([
                     http::header::AUTHORIZATION,
                     http::header::CONTENT_TYPE,
+                    http::HeaderName::from_static("x-ciel-backend"),
                 ])
+                .expose_headers([http::HeaderName::from_static("x-ciel-served-by")])
         )
         // M3: Request ID
         .layer(SetRequestIdLayer::x_request_id(MakeRequestUuid))
