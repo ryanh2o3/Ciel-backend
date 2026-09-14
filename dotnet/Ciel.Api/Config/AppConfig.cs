@@ -61,7 +61,8 @@ public sealed class AppConfig
         return new AppConfig
         {
             HttpAddr = EnvOr("HTTP_ADDR", "0.0.0.0:8080"),
-            DatabaseUrl = EnvOrThrow("DATABASE_URL"),
+            // Rust/Compose use postgres:// URIs; Npgsql expects postgresql:// or key=value.
+            DatabaseUrl = ToNpgsqlConnectionString(EnvOrThrow("DATABASE_URL")),
             RedisUrl = EnvOr("REDIS_URL", "redis://127.0.0.1/"),
 
             S3Endpoint = EnvOrThrow("S3_ENDPOINT"),
@@ -134,5 +135,31 @@ public sealed class AppConfig
         }
 
         return decoded;
+    }
+
+    /// <summary>
+    /// Accepts Rust-style <c>postgres://user:pass@host:port/db</c> or already-valid
+    /// Npgsql URIs / key=value strings.
+    /// </summary>
+    internal static string ToNpgsqlConnectionString(string raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            throw new InvalidOperationException("DATABASE_URL is empty");
+        }
+
+        var trimmed = raw.Trim();
+        if (!trimmed.Contains("://", StringComparison.Ordinal))
+        {
+            return trimmed; // already Host=...;Username=...
+        }
+
+        // Npgsql URI parser wants postgresql://, not postgres://
+        if (trimmed.StartsWith("postgres://", StringComparison.OrdinalIgnoreCase))
+        {
+            trimmed = "postgresql://" + trimmed["postgres://".Length..];
+        }
+
+        return trimmed;
     }
 }

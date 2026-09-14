@@ -1,13 +1,10 @@
 package com.ciel.config;
 
-import com.ciel.web.auth.AuthUserResolver;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.PropertyNamingStrategies;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.web.method.support.HandlerMethodArgumentResolver;
-import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
 import software.amazon.awssdk.regions.Region;
@@ -17,22 +14,14 @@ import software.amazon.awssdk.services.s3.presigner.S3Presigner;
 import software.amazon.awssdk.services.sqs.SqsClient;
 
 import java.net.URI;
-import java.util.List;
 
 @Configuration
-public class InfraConfig implements WebMvcConfigurer {
+public class InfraConfig {
 
-    private final AuthUserResolver authUserResolver;
     private final AppProperties props;
 
-    public InfraConfig(AuthUserResolver authUserResolver, AppProperties props) {
-        this.authUserResolver = authUserResolver;
+    public InfraConfig(AppProperties props) {
         this.props = props;
-    }
-
-    @Override
-    public void addArgumentResolvers(List<HandlerMethodArgumentResolver> resolvers) {
-        resolvers.add(authUserResolver);
     }
 
     @Bean
@@ -59,11 +48,7 @@ public class InfraConfig implements WebMvcConfigurer {
 
     /**
      * Always signs against the <b>internal</b> {@code S3_ENDPOINT} — matching Rust's
-     * {@code ObjectStorage}, which never signs against the public endpoint. PUT (upload)
-     * URLs are returned as-signed (see {@code MediaService#createUpload}); GET URLs are
-     * rewritten to the public endpoint only *after* signing, in
-     * {@code MediaService#rewritePublicEndpoint} (mirrors Rust's {@code media.rs}
-     * {@code rewrite_presigned_url}).
+     * {@code ObjectStorage}. GET URLs may be rewritten after signing in MediaService.
      */
     @Bean
     public S3Presigner s3Presigner() {
@@ -73,6 +58,8 @@ public class InfraConfig implements WebMvcConfigurer {
                 .serviceConfiguration(S3Configuration.builder()
                         .pathStyleAccessEnabled(props.getS3().isForcePathStyle())
                         .build());
+        // Prefer internal endpoint for signing. If only a public HTTPS URL is set
+        // (Unraid-style S3_ENDPOINT), still use it — path-style MinIO via tunnel.
         String endpoint = props.getS3().getEndpoint();
         if (endpoint != null && !endpoint.isBlank()) {
             builder.endpointOverride(URI.create(endpoint));
