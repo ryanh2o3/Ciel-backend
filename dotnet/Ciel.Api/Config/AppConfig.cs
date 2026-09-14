@@ -139,7 +139,8 @@ public sealed class AppConfig
 
     /// <summary>
     /// Accepts Rust-style <c>postgres://user:pass@host:port/db</c> or already-valid
-    /// Npgsql URIs / key=value strings.
+    /// Npgsql key=value strings. Always returns a key=value connection string so we
+    /// do not depend on Npgsql's URI parser (which rejects <c>postgres://</c>).
     /// </summary>
     internal static string ToNpgsqlConnectionString(string raw)
     {
@@ -154,12 +155,31 @@ public sealed class AppConfig
             return trimmed; // already Host=...;Username=...
         }
 
-        // Npgsql URI parser wants postgresql://, not postgres://
-        if (trimmed.StartsWith("postgres://", StringComparison.OrdinalIgnoreCase))
+        if (!Uri.TryCreate(trimmed, UriKind.Absolute, out var uri))
         {
-            trimmed = "postgresql://" + trimmed["postgres://".Length..];
+            throw new InvalidOperationException($"invalid DATABASE_URL: {trimmed}");
         }
 
-        return trimmed;
+        if (!uri.Scheme.Equals("postgres", StringComparison.OrdinalIgnoreCase)
+            && !uri.Scheme.Equals("postgresql", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException($"unsupported DATABASE_URL scheme: {uri.Scheme}");
+        }
+
+        var userInfo = uri.UserInfo.Split(':', 2);
+        var username = userInfo.Length > 0 ? Uri.UnescapeDataString(userInfo[0]) : "";
+        var password = userInfo.Length > 1 ? Uri.UnescapeDataString(userInfo[1]) : "";
+        var database = uri.AbsolutePath.Trim('/');
+        var port = uri.IsDefaultPort ? 5432 : uri.Port;
+
+        var builder = new Npgsql.NpgsqlConnectionStringBuilder
+        {
+            Host = uri.Host,
+            Port = port,
+            Username = username,
+            Password = password,
+            Database = database,
+        };
+        return builder.ConnectionString;
     }
 }
