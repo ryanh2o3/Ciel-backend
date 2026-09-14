@@ -55,10 +55,10 @@ builder.Services.AddSingleton<TrustService>();
 builder.Services.AddSingleton<RateLimiterService>();
 
 builder.Services.AddExceptionHandler<ErrorHandler>();
-// Intentionally NOT calling AddProblemDetails(): ErrorHandler.TryHandleAsync
-// always returns true, so ASP.NET Core's ProblemDetails writer would never
-// run anyway — omitting the registration avoids a second (unused) error
-// contract living in the app and keeps `{"error":"..."}` the only shape.
+// Required by UseExceptionHandler() in ASP.NET Core 8 even when a custom
+// IExceptionHandler is registered; ErrorHandler always returns true so clients
+// still only ever see {"error":"..."} (never ProblemDetails JSON).
+builder.Services.AddProblemDetails();
 
 builder.Services.ConfigureHttpJsonOptions(options =>
 {
