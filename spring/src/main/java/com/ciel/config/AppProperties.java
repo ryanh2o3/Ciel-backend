@@ -24,6 +24,13 @@ public class AppProperties {
      */
     private long ipSignupRateLimit = 3;
 
+    /**
+     * Comma-separated CIDRs whose peers may set {@code X-Forwarded-For} /
+     * {@code X-Forwarded-Proto} (env: {@code TRUSTED_PROXY_CIDRS}). Empty means
+     * forwarded headers are ignored for HTTPS enforcement (Rust parity).
+     */
+    private String trustedProxyCidrs = "";
+
     @NestedConfigurationProperty
     private Paseto paseto = new Paseto();
 
