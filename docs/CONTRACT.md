@@ -10,7 +10,10 @@ Shared contracts for Rust, Spring Boot, and ASP.NET Core API implementations beh
 | Errors | `{"error":"<message>"}` |
 | Auth header | `Authorization: Bearer <access_token>` |
 | Admin header | `x-admin-token: <ADMIN_TOKEN>` |
-| Pagination | Query `limit` (default 30, max 200) + `cursor`; response `{ "items": [...], "next_cursor": "..." \| null }` |
+| Pagination | Query `limit` (default 30, max 200) + `cursor`; response `{ "items": [...], "next_cursor": "..." \| null }` — **`next_cursor` key always present** |
+| Timestamps | RFC3339 strings (e.g. `2024-01-15T12:00:00Z`), never epoch numbers |
+| Nulls | Match Rust serde: include `null` for `Option` fields unless Rust uses `skip_serializing_if` |
+| Health | `GET /health` → `{"status":"ok"\|"degraded"}` (`application/json`) |
 | Served-by | Every API response SHOULD include `X-Ciel-Served-By: rust\|spring\|dotnet` |
 | Backend pin | Clients ignore; debug with request header `X-Ciel-Backend: rust\|spring\|dotnet` |
 

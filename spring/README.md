@@ -21,7 +21,7 @@ export CIEL_SERVED_BY=spring
 java -jar target/ciel-backend-spring.jar
 ```
 
-Health: `GET /health` → `ok`
+Health: `GET /health` → `{"status":"ok"}` (or `"degraded"` if DB/Redis ping fails)
 
 ## Docker
 

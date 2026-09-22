@@ -25,7 +25,10 @@ spring:
       url: ${REDIS_URL:redis://127.0.0.1:6379}
   jackson:
     property-naming-strategy: SNAKE_CASE
-    default-property-inclusion: non_null
+    # Include nulls by default (Rust serializes Option::None as null unless
+    # skip_serializing_if). Per-field @JsonInclude(NON_NULL) mirrors Rust skips.
+    # Note: InfraConfig's ObjectMapper @Bean is authoritative for HTTP JSON.
+    default-property-inclusion: always
     serialization:
       write-dates-as-timestamps: false
 
