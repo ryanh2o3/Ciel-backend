@@ -11,7 +11,10 @@ public static class CielJsonOptions
         {
             PropertyNamingPolicy = SnakeCaseNamingPolicy.Instance,
             DictionaryKeyPolicy = SnakeCaseNamingPolicy.Instance,
-            DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+            // Rust includes null Option fields unless skip_serializing_if is set
+            // (User.bio, ListResponse.next_cursor, Media.*_url, UploadStatus.processed_media_id).
+            // Post optional engagement/avatar fields use [JsonIgnore(WhenWritingNull)] instead.
+            DefaultIgnoreCondition = JsonIgnoreCondition.Never,
             PropertyNameCaseInsensitive = true,
         };
 

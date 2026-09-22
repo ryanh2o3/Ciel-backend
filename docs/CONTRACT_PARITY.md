@@ -6,6 +6,9 @@ Automated runner: [`../scripts/parity-check.sh`](../scripts/parity-check.sh).
 
 ## Auth
 
+- [ ] `GET /health` → `{"status":"ok"}` (or `"degraded"`); never plain text
+- [ ] Timestamps are RFC3339 strings (e.g. `access_expires_at`), not epoch numbers
+- [ ] `next_cursor` key present even when null on list endpoints
 - [ ] `POST /v1/auth/login` — valid credentials → 200 + `access_token`, `refresh_token`, `access_expires_at`, `refresh_expires_at`
 - [ ] `POST /v1/auth/login` — bad password → 401 `invalid credentials`
 - [ ] `GET /v1/auth/me` with access → 200 user (includes `email`)

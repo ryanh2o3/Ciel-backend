@@ -29,6 +29,13 @@ public class InfraConfig {
         ObjectMapper mapper = new ObjectMapper();
         mapper.registerModule(new JavaTimeModule());
         mapper.setPropertyNamingStrategy(PropertyNamingStrategies.SNAKE_CASE);
+        // Match Rust's time::serde::rfc3339 (strings, not epoch numbers).
+        // This custom bean bypasses spring.jackson.* from application.yml —
+        // keep serialization settings here in sync with docs/CONTRACT.md.
+        mapper.disable(com.fasterxml.jackson.databind.SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
+        // Rust includes null Option fields unless skip_serializing_if is set
+        // (e.g. bio, avatar_url, next_cursor). Do not use NON_NULL globally.
+        mapper.setSerializationInclusion(com.fasterxml.jackson.annotation.JsonInclude.Include.ALWAYS);
         return mapper;
     }
 

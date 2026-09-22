@@ -44,8 +44,8 @@ public class ApiExceptionHandler {
     /** Malformed / unreadable JSON request body. */
     @ExceptionHandler(HttpMessageNotReadableException.class)
     public ResponseEntity<Map<String, String>> handleUnreadable(HttpMessageNotReadableException ex) {
-        log.warn("bad request: malformed request body: {}", ex.getMessage());
-        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("error", "malformed request body"));
+        log.warn("bad request: invalid request body: {}", ex.getMessage());
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("error", "invalid request body"));
     }
 
     /** Missing required `@RequestParam`. */
