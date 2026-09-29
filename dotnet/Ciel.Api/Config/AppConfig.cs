@@ -64,6 +64,8 @@ public sealed class AppConfig
             // Rust/Compose use postgres:// URIs; Npgsql expects postgresql:// or key=value.
             DatabaseUrl = ToNpgsqlConnectionString(EnvOrThrow("DATABASE_URL")),
             RedisUrl = EnvOr("REDIS_URL", "redis://127.0.0.1/"),
+            // StackExchange.Redis rejects redis:// URIs, so the raw value above is
+            // normalized at connection time via BuildRedisConfiguration (Program.cs).
 
             S3Endpoint = EnvOrThrow("S3_ENDPOINT"),
             S3PublicEndpoint = configuration["S3_PUBLIC_ENDPOINT"],
@@ -181,5 +183,72 @@ public sealed class AppConfig
             Database = database,
         };
         return builder.ConnectionString;
+    }
+
+    /// <summary>
+    /// Accepts Rust-style <c>redis://[password@]host:port/db</c> (and <c>rediss://</c>)
+    /// or already-valid StackExchange.Redis connection strings. StackExchange.Redis
+    /// rejects URI syntax, so deployment secrets using redis:// URLs must be
+    /// normalized before connecting.
+    /// </summary>
+    internal static StackExchange.Redis.ConfigurationOptions BuildRedisConfiguration(string raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            throw new InvalidOperationException("REDIS_URL is empty");
+        }
+
+        var trimmed = raw.Trim();
+        if (!trimmed.Contains("://", StringComparison.Ordinal))
+        {
+            return StackExchange.Redis.ConfigurationOptions.Parse(trimmed); // already host:port,...
+        }
+
+        if (!Uri.TryCreate(trimmed, UriKind.Absolute, out var uri))
+        {
+            throw new InvalidOperationException($"invalid REDIS_URL: {trimmed}");
+        }
+
+        var secure = string.Equals(uri.Scheme, "rediss", StringComparison.OrdinalIgnoreCase);
+        if (!secure && !string.Equals(uri.Scheme, "redis", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException($"unsupported REDIS_URL scheme: {uri.Scheme}");
+        }
+
+        // Uri.Port is -1 for non-registered schemes without an explicit port.
+        var port = uri.Port > 0 ? uri.Port : (secure ? 6383 : 6379);
+        var options = new StackExchange.Redis.ConfigurationOptions
+        {
+            AbortOnConnectFail = false,
+            Ssl = secure,
+        };
+        options.EndPoints.Add(uri.Host, port);
+
+        if (!string.IsNullOrEmpty(uri.UserInfo))
+        {
+            // redis://:password@host or redis://user:password@host (URL-encoded allowed).
+            var userInfo = uri.UserInfo.Split(':', 2);
+            if (userInfo.Length > 1)
+            {
+                options.Password = Uri.UnescapeDataString(userInfo[1]);
+            }
+            else if (userInfo.Length == 0 || userInfo[0].Length > 0)
+            {
+                options.Password = Uri.UnescapeDataString(uri.UserInfo);
+            }
+        }
+
+        var databasePath = uri.AbsolutePath.Trim('/');
+        if (databasePath.Length > 0)
+        {
+            if (!int.TryParse(databasePath, out var db) || db < 0)
+            {
+                throw new InvalidOperationException($"invalid REDIS_URL database: {databasePath}");
+            }
+
+            options.DefaultDatabase = db;
+        }
+
+        return options;
     }
 }

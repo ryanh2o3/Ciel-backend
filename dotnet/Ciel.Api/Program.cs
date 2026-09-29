@@ -39,7 +39,7 @@ var dataSource = dataSourceBuilder.Build();
 builder.Services.AddSingleton(dataSource);
 
 builder.Services.AddSingleton<IConnectionMultiplexer>(_ =>
-    ConnectionMultiplexer.Connect(appConfig.RedisUrl));
+    ConnectionMultiplexer.Connect(AppConfig.BuildRedisConfiguration(appConfig.RedisUrl)));
 
 builder.Services.AddSingleton<StorageService>();
 builder.Services.AddSingleton<QueueService>();

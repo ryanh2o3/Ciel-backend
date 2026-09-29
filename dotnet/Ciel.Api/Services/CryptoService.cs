@@ -50,8 +50,10 @@ public sealed class CryptoService
             var memoryKb = ParseParam(paramParts, 'm');
             var iterations = ParseParam(paramParts, 't');
             var parallelism = ParseParam(paramParts, 'p');
-            var salt = Convert.FromBase64String(parts[3]);
-            var expected = Convert.FromBase64String(parts[4]);
+            // Rust's argon2 crate writes unpadded base64; pad before decoding so
+            // hashes created by the Rust stack verify here too.
+            var salt = Convert.FromBase64String(PadBase64(parts[3]));
+            var expected = Convert.FromBase64String(PadBase64(parts[4]));
             var actual = HashWithParams(password, salt, iterations, memoryKb, parallelism);
             return CryptographicOperations.FixedTimeEquals(actual, expected);
         }
@@ -87,6 +89,22 @@ public sealed class CryptoService
     private static string FormatPhc(byte[] hash, byte[] salt, int iterations, int memoryKb, int parallelism)
     {
         return $"$argon2id$v=19$m={memoryKb},t={iterations},p={parallelism}${Convert.ToBase64String(salt)}${Convert.ToBase64String(hash)}";
+    }
+
+    private static string PadBase64(string value)
+    {
+        var remainder = value.Length % 4;
+        if (remainder == 0)
+        {
+            return value;
+        }
+
+        if (remainder is 2 or 3)
+        {
+            return value.PadRight(value.Length + (4 - remainder), '=');
+        }
+
+        throw new FormatException("invalid base64 length");
     }
 
     private static int ParseParam(string[] parts, char key)

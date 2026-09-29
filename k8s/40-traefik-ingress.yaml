@@ -28,11 +28,11 @@ spec:
       services:
         - name: ciel-api-dotnet
           port: 8080
-    # Opaque default: weighted round-robin across implementations.
+    # Opaque default: weighted round-robin across all three implementations.
     # Keep only Ready backends in this list — Traefik still picks by weight even
     # when a Service has 0 Endpoints, which surfaces as intermittent 502s.
-    # Header pin routes above still reach spring/dotnet for parity debugging.
-    # When .NET is healthy: e.g. rust 50 / spring 25 / dotnet 25.
+    # .NET ships the redis:// URL fix (AppConfig.BuildRedisConfiguration), so it
+    # is healthy with the standard secret; drop it here again if its pods flap.
     - match: PathPrefix(`/`)
       kind: Rule
       priority: 10
@@ -42,7 +42,10 @@ spec:
           weight: 50
         - name: ciel-api-spring
           port: 8080
-          weight: 50
+          weight: 25
+        - name: ciel-api-dotnet
+          port: 8080
+          weight: 25
 ---
 # Optional NodePort/LB for Cloudflare Tunnel (or hostNetwork Traefik).
 # Point the tunnel public hostname at this service instead of compose `api:8080`.
