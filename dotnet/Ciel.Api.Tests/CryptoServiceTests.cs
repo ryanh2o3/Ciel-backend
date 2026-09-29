@@ -27,6 +27,17 @@ public class CryptoServiceTests
     }
 
     [Fact]
+    public async Task VerifyAcceptsRustGeneratedUnpaddedPhc()
+    {
+        // Real hash produced by the Rust argon2 crate (unpadded base64 segments).
+        const string rustPhc = "$argon2id$v=19$m=19456,t=2,p=1$aNvD0XsklBlRiXk6Pz+W9A$RwEl4P+w33YwAAa2qjmh7zYsNEq8kzBi/3LJfHfAFwI";
+        var crypto = new CryptoService();
+
+        Assert.True(await crypto.VerifyPasswordAsync("ChangeMe123!", rustPhc));
+        Assert.False(await crypto.VerifyPasswordAsync("wrong-password", rustPhc));
+    }
+
+    [Fact]
     public async Task VerifyFailsForMalformedHash()
     {
         var crypto = new CryptoService();
