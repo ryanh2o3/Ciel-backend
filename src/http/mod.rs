@@ -12,6 +12,7 @@ use crate::AppState;
 
 mod auth;
 mod error;
+mod extract;
 mod handlers;
 mod logging;
 pub mod middleware;

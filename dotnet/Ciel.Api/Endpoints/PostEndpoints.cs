@@ -1,3 +1,4 @@
+using System.Text;
 using Ciel.Api.Domain;
 using Ciel.Api.Http;
 using Ciel.Api.Http.Auth;
@@ -13,14 +14,15 @@ public static class PostEndpoints
     public static RouteGroupBuilder MapPostEndpoints(this RouteGroupBuilder group)
     {
         group.MapPost("/", CreatePost).RequireAuth();
-        group.MapGet("/{id:guid}", GetPost).OptionalAuth();
-        group.MapPost("/{id:guid}/like", LikePost).RequireAuth();
-        group.MapDelete("/{id:guid}/like", UnlikePost).RequireAuth();
-        group.MapPost("/{id:guid}/comment", CommentPost).RequireAuth();
+        group.MapGet("/{id}", GetPost).OptionalAuth();
+        group.MapPost("/{id}/like", LikePost).RequireAuth();
+        group.MapDelete("/{id}/like", UnlikePost).RequireAuth();
+        group.MapPost("/{id}/comment", CommentPost).RequireAuth();
         return group;
     }
 
     private static async Task<IResult> CreatePost(
+        ExtendedApiService extended,
         PostService posts,
         MediaService media,
         FeedService feed,
@@ -38,7 +40,7 @@ public static class PostEndpoints
             throw ApiException.BadRequest("maximum 10 images per post");
         }
 
-        if (req.Caption is not null && req.Caption.Length > Validation.MaxCaptionLen)
+        if (req.Caption is not null && System.Text.Encoding.UTF8.GetByteCount(req.Caption) > Validation.MaxCaptionLen)
         {
             throw ApiException.BadRequest("caption must be at most 2200 characters");
         }
@@ -54,12 +56,14 @@ public static class PostEndpoints
             throw ApiException.BadRequest("invalid media_id");
         }
 
-        await feed.RefreshHomeFeedAsync(ownerId, ct);
+        extended.invalidateFollowers(ownerId);
+        extended.activity(ownerId,"post_created");
         await media.PopulatePostAvatarUrlsAsync([post], ct);
         return Results.Json(post);
     }
 
     private static async Task<IResult> GetPost(
+        ExtendedApiService extended,
         PostService posts,
         MediaService media,
         HttpContext ctx,
@@ -74,6 +78,7 @@ public static class PostEndpoints
     }
 
     private static async Task<IResult> LikePost(
+        ExtendedApiService extended,
         PostService posts,
         EngagementService engagement,
         HttpContext ctx,
@@ -87,6 +92,7 @@ public static class PostEndpoints
         }
 
         var created = await engagement.LikePostAsync(userId, id, ct);
+        if(created)extended.postEngagement(userId,id,"post_liked",null);
         return Results.Json(new LikeResponse { Created = created });
     }
 
@@ -102,6 +108,7 @@ public static class PostEndpoints
     }
 
     private static async Task<IResult> CommentPost(
+        ExtendedApiService extended,
         PostService posts,
         EngagementService engagement,
         HttpContext ctx,
@@ -115,7 +122,7 @@ public static class PostEndpoints
             throw ApiException.BadRequest("comment body cannot be empty");
         }
 
-        if (req.Body.Length > maxCommentLen)
+        if (req.Body.EnumerateRunes().Count() > maxCommentLen)
         {
             throw ApiException.BadRequest("comment body exceeds 1000 characters");
         }
@@ -127,6 +134,7 @@ public static class PostEndpoints
         }
 
         var comment = await engagement.CommentPostAsync(userId, id, req.Body, ct);
+        extended.postEngagement(userId,id,"post_commented",req.Body);
         return Results.Json(comment);
     }
 }

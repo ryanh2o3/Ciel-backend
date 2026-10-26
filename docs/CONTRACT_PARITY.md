@@ -2,7 +2,19 @@
 
 Run the same sequence against each backend via `X-Ciel-Backend: rust|spring|dotnet` (or direct service URL). Assert status codes and JSON field shapes match (normalize timestamps / UUIDs / signed URLs as noted).
 
-Automated runner: [`../scripts/parity-check.sh`](../scripts/parity-check.sh).
+## Automated local suite
+
+Run `bash scripts/run-parity-local.sh` from the repository root. Requires Rust, Java 21, Maven, .NET 8, Python 3, PostgreSQL server binaries and Redis. Set `PG_BIN` and `JAVA_BIN` if binaries are not on PATH. The wrapper selects Homebrew Java 21 when available.
+
+The suite builds all three native APIs, runs Spring/.NET unit tests, verifies all 67 method/path pairs, and starts disposable local PostgreSQL, Redis, and an S3/SQS protocol test double. It creates its own accounts, invites and keys; no production token or configured deployment is used. Processes stop on exit; the printed temporary directory retains logs.
+
+Each backend independently exercises auth, profiles, posts, social relationships, search, notifications, invites, devices, trust, moderation, stories, highlights and media lifecycle. Status codes and normalized response bodies must match. Nine issuer/verifier combinations test access tokens, refresh rotation and replay revocation across backends against the same database. UUIDs, timestamps, secrets and signed URLs are normalized; business fields and error messages are compared. `X-Ciel-Served-By` intentionally differs. Metrics contain backend-local measurements.
+
+CI runs this suite in `.github/workflows/api-parity.yml`. SQL in each port executes directly against the shared schema with its native database driver; there is no runtime Rust dependency for HTTP handlers.
+
+The AWS test double verifies API/queue contracts, not real S3 signature acceptance or image processing. The deployment checklist below still requires real infrastructure. Existing deployed-stack smoke runner: [`../scripts/parity-check.sh`](../scripts/parity-check.sh).
+
+## Deployment checklist
 
 ## Auth
 

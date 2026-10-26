@@ -124,7 +124,7 @@ public class UserController {
         }
         String email = body.getEmail().trim();
         RequestValidation.validateMaxLen("email", email, MAX_EMAIL_LEN);
-        String[] parts = email.split("@");
+        String[] parts = email.split("@", -1);
         if (parts.length != 2 || parts[0].isEmpty() || !parts[1].contains(".")) {
             throw ApiException.badRequest("invalid email format");
         }
@@ -138,7 +138,7 @@ public class UserController {
             RequestValidation.validateMaxLen("bio", body.getBio(), MAX_BIO_LEN);
         }
 
-        if (body.getPassword() == null || body.getPassword().trim().length() < 8) {
+        if (body.getPassword() == null || body.getPassword().trim().getBytes(java.nio.charset.StandardCharsets.UTF_8).length < 8) {
             throw ApiException.badRequest("password must be at least 8 characters");
         }
         RequestValidation.validateMaxLen("password", body.getPassword(), MAX_PASSWORD_LEN);
@@ -148,7 +148,7 @@ public class UserController {
         if (body.getPassword().chars().noneMatch(Character::isLowerCase)) {
             throw ApiException.badRequest("password must contain at least one lowercase letter");
         }
-        if (body.getPassword().chars().noneMatch(Character::isDigit)) {
+        if (body.getPassword().chars().noneMatch(c -> c >= '0' && c <= '9')) {
             throw ApiException.badRequest("password must contain at least one digit");
         }
         RequestValidation.requiredTrimmed("invite_code", body.getInviteCode());

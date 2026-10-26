@@ -69,3 +69,7 @@ docker run --rm -p 8080:8080 --env-file ../.env ciel-api-dotnet:local
 - Enqueues media jobs to SQS; the **Rust worker** processes uploads.
 - Does not run hourly cleanup loops (Rust API only).
 - Responses include `X-Ciel-Served-By: dotnet`.
+
+## Parity tests
+
+All 67 HTTP method/path pairs are implemented locally; no requests are forwarded to Rust. Background media processing remains with the shared Rust workers. Run `bash scripts/run-parity-local.sh` from the repository root; see [the parity guide](../docs/CONTRACT_PARITY.md).

@@ -1,6 +1,6 @@
 # Ciel Spring Boot API
 
-Spring Boot parity port of the Ciel photo social HTTP API. This stack serves `/v1` routes only — media processing and cleanup remain owned by the Rust implementation.
+Spring Boot parity port of the Ciel photo social HTTP API. This stack independently serves all 67 HTTP method/path pairs, including `/health` and `/metrics`. Background media processing and cleanup remain owned by the Rust workers. No requests are forwarded to Rust.
 
 ## Contract
 
@@ -31,3 +31,7 @@ docker run --env-file ../.env -p 8080:8080 ciel-backend-spring
 ```
 
 Responses include `X-Ciel-Served-By: spring` when `CIEL_SERVED_BY=spring`.
+
+## Parity tests
+
+Run `bash scripts/run-parity-local.sh` from the repository root. See [the parity guide](../docs/CONTRACT_PARITY.md) for prerequisites and coverage.

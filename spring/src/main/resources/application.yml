@@ -44,7 +44,7 @@ logging:
 ciel:
   served-by: ${CIEL_SERVED_BY:spring}
   admin-token: ${ADMIN_TOKEN:}
-  ip-signup-rate-limit: ${IP_SIGNUP_RATE_LIMIT:3}
+  ip-signup-rate-limit: ${IP_SIGNUP_RATE_LIMIT:10}
   trusted-proxy-cidrs: ${TRUSTED_PROXY_CIDRS:}
   paseto:
     access-key: ${PASETO_ACCESS_KEY:}

@@ -32,6 +32,7 @@ Implementations live in this repo: Rust (`src/`), Spring (`spring/`), .NET (`dot
 | Audience (`aud`) | `ciel` |
 | Subject (`sub`) | user UUID string |
 | Type claim | custom claim **`typ`**: `access` or `refresh` (not JWT `type`) |
+| Temporal claims | `iat`, `nbf`, `exp` required; `nbf` equals issuance time on minted tokens |
 | Refresh `jti` | refresh_tokens row UUID |
 | Access TTL | `ACCESS_TTL_MINUTES` (default 15) |
 | Refresh TTL | `REFRESH_TTL_DAYS` (default 30) |

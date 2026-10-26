@@ -39,6 +39,8 @@ public sealed class StorageService : IDisposable
         return FallbackCredentialsFactory.GetCredentials();
     }
 
+    public Task DeleteAsync(string key, CancellationToken ct) => _client.DeleteObjectAsync(_bucket, key, ct);
+
     public string Bucket => _bucket;
 
     public (string Url, List<(string Name, string Value)> Headers) PresignPut(
@@ -69,7 +71,8 @@ public sealed class StorageService : IDisposable
 
         var headers = new List<(string, string)>
         {
-            ("Content-Type", contentType),
+            ("content-length", contentLength.ToString(System.Globalization.CultureInfo.InvariantCulture)),
+            ("content-type", contentType),
         };
 
         return (url, headers.Select(h => (h.Item1, h.Item2)).ToList());

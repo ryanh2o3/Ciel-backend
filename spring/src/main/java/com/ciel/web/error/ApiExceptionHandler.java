@@ -36,7 +36,7 @@ public class ApiExceptionHandler {
     /** Path variable / query param of the wrong type (e.g. non-UUID `:id`). */
     @ExceptionHandler(MethodArgumentTypeMismatchException.class)
     public ResponseEntity<Map<String, String>> handleTypeMismatch(MethodArgumentTypeMismatchException ex) {
-        String message = "invalid value for parameter '" + ex.getName() + "'";
+        String message = "invalid request";
         log.warn("bad request: {}", message);
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("error", message));
     }
@@ -51,7 +51,7 @@ public class ApiExceptionHandler {
     /** Missing required `@RequestParam`. */
     @ExceptionHandler(MissingServletRequestParameterException.class)
     public ResponseEntity<Map<String, String>> handleMissingParam(MissingServletRequestParameterException ex) {
-        String message = "missing required parameter '" + ex.getParameterName() + "'";
+        String message = "invalid request";
         log.warn("bad request: {}", message);
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("error", message));
     }
@@ -59,8 +59,14 @@ public class ApiExceptionHandler {
     @ExceptionHandler(HttpMediaTypeNotSupportedException.class)
     public ResponseEntity<Map<String, String>> handleUnsupportedMediaType(HttpMediaTypeNotSupportedException ex) {
         log.warn("bad request: unsupported media type: {}", ex.getMessage());
-        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("error", "unsupported media type"));
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("error", "invalid request body"));
     }
+
+    @ExceptionHandler(org.springframework.web.servlet.resource.NoResourceFoundException.class)
+    public ResponseEntity<Void> handleMissingRoute(Exception ex) { return ResponseEntity.notFound().build(); }
+
+    @ExceptionHandler(org.springframework.web.HttpRequestMethodNotSupportedException.class)
+    public ResponseEntity<Void> handleWrongMethod(Exception ex) { return ResponseEntity.status(405).build(); }
 
     @ExceptionHandler(Exception.class)
     public ResponseEntity<Map<String, String>> handleOther(Exception ex) {

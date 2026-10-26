@@ -24,12 +24,12 @@ public static class AuthEndpoints
             throw ApiException.BadRequest("email and password are required");
         }
 
-        if (req.Password.Length > Validation.MaxPasswordLen)
+        if (System.Text.Encoding.UTF8.GetByteCount(req.Password) > Validation.MaxPasswordLen)
         {
             throw ApiException.BadRequest("password must be at most 128 characters");
         }
 
-        var tokens = await auth.LoginAsync(req.Email.Trim(), req.Password, ct);
+        var tokens = await auth.LoginAsync(req.Email, req.Password, ct);
         return tokens is null
             ? throw ApiException.Unauthorized("invalid credentials")
             : Results.Json(tokens);

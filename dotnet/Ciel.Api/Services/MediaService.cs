@@ -129,6 +129,16 @@ public sealed class MediaService
         };
     }
 
+    public async Task<Media?> GetMediaAsync(Guid id, CancellationToken ct)
+    {
+        await using var conn = await _db.OpenConnectionAsync(ct);
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT id,owner_id,original_key,thumb_key,medium_key,width,height,bytes,created_at FROM media WHERE id=$1";
+        cmd.Parameters.AddWithValue(id);
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        return await reader.ReadAsync(ct) ? await PopulateUrlsAsync(ReadMedia(reader), ct) : null;
+    }
+
     public async Task<Media?> GetMediaForUserAsync(Guid mediaId, Guid viewerId, CancellationToken ct)
     {
         await using var conn = await _db.OpenConnectionAsync(ct);
@@ -242,6 +252,10 @@ public sealed class MediaService
     /// rather than sequentially per-post, since many posts in a feed page
     /// typically share the same handful of authors/avatars.
     /// </summary>
+    public async Task PopulatePostPrimaryMediaAsync(IList<Post> posts,CancellationToken ct) {
+        foreach(var post in posts) if(post.MediaIds.Count>0) post.PrimaryMedia=await GetMediaAsync(post.MediaIds[0],ct);
+    }
+
     public async Task PopulatePostAvatarUrlsAsync(IList<Post> posts, CancellationToken ct)
     {
         var keys = posts

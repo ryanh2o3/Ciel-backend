@@ -12,7 +12,7 @@ public static class UserEndpoints
     public static RouteGroupBuilder MapUserEndpoints(this RouteGroupBuilder group)
     {
         group.MapPost("/", CreateUser);
-        group.MapGet("/{id:guid}", GetUser);
+        group.MapGet("/{id}", GetUser);
         return group;
     }
 

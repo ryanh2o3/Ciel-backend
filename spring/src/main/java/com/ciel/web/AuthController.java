@@ -37,10 +37,10 @@ public class AuthController {
                 || body.getPassword().trim().isEmpty()) {
             throw ApiException.badRequest("email and password are required");
         }
-        if (body.getPassword().length() > 128) {
+        if (body.getPassword().getBytes(java.nio.charset.StandardCharsets.UTF_8).length > 128) {
             throw ApiException.badRequest("password must be at most 128 characters");
         }
-        return authService.login(body.getEmail().trim(), body.getPassword());
+        return authService.login(body.getEmail(), body.getPassword());
     }
 
     @PostMapping("/refresh")
@@ -48,7 +48,7 @@ public class AuthController {
         if (body.getRefreshToken() == null || body.getRefreshToken().trim().isEmpty()) {
             throw ApiException.badRequest("refresh_token is required");
         }
-        return authService.refresh(body.getRefreshToken().trim());
+        return authService.refresh(body.getRefreshToken());
     }
 
     @PostMapping("/revoke")
@@ -57,7 +57,7 @@ public class AuthController {
         if (body.getRefreshToken() == null || body.getRefreshToken().trim().isEmpty()) {
             throw ApiException.badRequest("refresh_token is required");
         }
-        authService.revoke(body.getRefreshToken().trim());
+        authService.revoke(body.getRefreshToken());
     }
 
     @GetMapping("/me")

@@ -76,7 +76,7 @@ public sealed class ErrorHandler(ILogger<ErrorHandler> logger) : IExceptionHandl
     private static string BadRequestMessage(BadHttpRequestException exception) =>
         exception.StatusCode == StatusCodes.Status413PayloadTooLarge
             ? "request body too large"
-            : "invalid request";
+            : exception.InnerException is JsonException || exception.StatusCode == 415 || exception.Message.Contains("body", StringComparison.OrdinalIgnoreCase) ? "invalid request body" : "invalid request";
 
     private static readonly IReadOnlyDictionary<string, string> Empty = new Dictionary<string, string>();
 

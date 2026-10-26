@@ -46,6 +46,9 @@ builder.Services.AddSingleton<QueueService>();
 builder.Services.AddSingleton<CryptoService>();
 builder.Services.AddSingleton<PasetoService>();
 builder.Services.AddSingleton<AuthService>();
+builder.Services.AddScoped<ApiData>();
+builder.Services.AddSingleton<RequestMetrics>();
+builder.Services.AddScoped<ExtendedApiService>();
 builder.Services.AddSingleton<UserService>();
 builder.Services.AddSingleton<PostService>();
 builder.Services.AddSingleton<FeedService>();
@@ -73,6 +76,8 @@ builder.Services.ConfigureHttpJsonOptions(options =>
     }
 });
 
+builder.Services.Configure<Microsoft.AspNetCore.Routing.RouteHandlerOptions>(options => options.ThrowOnBadRequest = true);
+
 var app = builder.Build();
 
 // Order mirrors Rust's middleware stack (src/http/mod.rs): request id ->
@@ -80,6 +85,7 @@ var app = builder.Build();
 // compression -> IP rate limiting -> routed endpoints. Per-user rate
 // limiting and ban checks run inside the auth endpoint filters (see
 // Http/Auth/AuthEndpointFilter.cs) since that's where AuthUser is resolved.
+app.Use((HttpContext context, RequestDelegate next) => context.RequestServices.GetRequiredService<RequestMetrics>().Record(context,next));
 app.UseExceptionHandler();
 app.UseMiddleware<RequestIdMiddleware>();
 app.UseMiddleware<RequestContextMiddleware>();
@@ -89,8 +95,14 @@ app.UseResponseCompression();
 app.UseMiddleware<IpRateLimitMiddleware>();
 
 app.MapHealthEndpoints();
+app.MapGet("/metrics", (HttpContext context, RequestMetrics metrics) => {
+    ExtendedEndpoints.Admin(context);
+    return Results.Text(metrics.Render(), "text/plain; charset=utf-8");
+});
 
 var v1 = app.MapGroup("/v1");
+v1.AddEndpointFilter<Ciel.Api.Http.RequiredRequestFields>();
+v1.MapExtendedEndpoints();
 v1.MapGroup("/auth").MapAuthEndpoints();
 v1.MapGroup("/users").MapUserEndpoints();
 v1.MapGroup("/posts").MapPostEndpoints();

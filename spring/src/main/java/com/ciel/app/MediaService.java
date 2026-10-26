@@ -93,12 +93,9 @@ public class MediaService {
         PresignedPutObjectRequest presigned = presigner.presignPutObject(r -> r.signatureDuration(Duration.ofSeconds(expiresInSeconds))
                 .putObjectRequest(put));
 
-        List<UploadHeader> headers = new ArrayList<>();
-        for (Map.Entry<String, List<String>> e : presigned.signedHeaders().entrySet()) {
-            for (String value : e.getValue()) {
-                headers.add(new UploadHeader(e.getKey(), value));
-            }
-        }
+        List<UploadHeader> headers = List.of(
+                new UploadHeader("content-length", Long.toString(bytes)),
+                new UploadHeader("content-type", contentType));
 
         return new UploadIntent(
                 uploadId,
@@ -223,6 +220,11 @@ public class MediaService {
         }
     }
 
+    public void populatePostPrimaryMedia(List<Post> posts) {
+        for (Post post : posts) if(post.getMediaIds()!=null && !post.getMediaIds().isEmpty())
+            getMedia(post.getMediaIds().getFirst()).ifPresent(post::setPrimaryMedia);
+    }
+
     public void populatePostAvatarUrls(List<Post> posts) {
         for (Post post : posts) {
             if (post.getOwnerAvatarKey() != null) {
@@ -312,7 +314,7 @@ public class MediaService {
             case "image/jpeg" -> "jpg";
             case "image/png" -> "png";
             case "image/webp" -> "webp";
-            default -> throw ApiException.badRequest("unsupported content type");
+            default -> throw ApiException.badRequest("invalid upload request");
         };
     }
 }

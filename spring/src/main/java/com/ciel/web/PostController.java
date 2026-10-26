@@ -30,16 +30,19 @@ import java.util.UUID;
 @RequestMapping("/v1/posts")
 public class PostController {
 
+    private final com.ciel.app.ExtendedApiService extended;
     private final PostService postService;
     private final MediaService mediaService;
     private final FeedService feedService;
     private final AuthService authService;
 
     public PostController(
+            com.ciel.app.ExtendedApiService extended,
             PostService postService,
             MediaService mediaService,
             FeedService feedService,
             AuthService authService) {
+        this.extended = extended;
         this.postService = postService;
         this.mediaService = mediaService;
         this.feedService = feedService;
@@ -56,7 +59,8 @@ public class PostController {
         }
         RequestValidation.validateMaxLen("caption", body.getCaption(), RequestValidation.MAX_CAPTION_LEN);
         Post post = postService.createPost(auth.userId(), body.getMediaIds(), body.getCaption());
-        feedService.refreshHomeFeed(auth.userId());
+        extended.invalidateFollowers(auth.userId());
+        extended.activity(auth.userId(), "post_created");
         mediaService.populatePostAvatarUrls(java.util.List.of(post));
         return post;
     }
@@ -77,6 +81,7 @@ public class PostController {
     public LikeResponse likePost(@PathVariable UUID id, AuthUser auth) {
         ensureVisible(id, auth.userId());
         boolean created = postService.likePost(auth.userId(), id).isPresent();
+        if(created) extended.postEngagement(auth.userId(),id,"post_liked",null);
         return new LikeResponse(created);
     }
 
@@ -93,11 +98,13 @@ public class PostController {
         if (body.getBody() == null || body.getBody().trim().isEmpty()) {
             throw ApiException.badRequest("comment body cannot be empty");
         }
-        if (body.getBody().length() > RequestValidation.MAX_COMMENT_LEN) {
+        if (body.getBody().codePointCount(0, body.getBody().length()) > RequestValidation.MAX_COMMENT_LEN) {
             throw ApiException.badRequest("comment body exceeds 1000 characters");
         }
         ensureVisible(id, auth.userId());
-        return postService.addComment(auth.userId(), id, body.getBody());
+        var comment = postService.addComment(auth.userId(), id, body.getBody());
+        extended.postEngagement(auth.userId(),id,"post_commented",body.getBody());
+        return comment;
     }
 
     private void ensureVisible(UUID postId, UUID viewerId) {

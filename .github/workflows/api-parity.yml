@@ -1,0 +1,37 @@
+name: Native API parity
+on:
+  pull_request:
+    paths: ['src/**', 'spring/**', 'dotnet/**', 'migrations/**', 'scripts/*parity*', 'Cargo.*', '.github/workflows/api-parity.yml']
+  push:
+    branches: [main]
+    paths: ['src/**', 'spring/**', 'dotnet/**', 'migrations/**', 'scripts/*parity*', 'Cargo.*', '.github/workflows/api-parity.yml']
+  workflow_dispatch:
+
+jobs:
+  parity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Install local test infrastructure
+        run: sudo apt-get update && sudo apt-get install -y postgresql redis-server
+      - name: Build and compare all native APIs
+        run: |
+          export PG_BIN="$(pg_config --bindir)"
+          bash scripts/run-parity-local.sh
+      - name: Preserve integration logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: api-parity-logs
+          path: /tmp/ciel-parity-*/*.log

@@ -59,16 +59,29 @@ public class IpRateLimitFilter extends OncePerRequestFilter {
         if (p.equals("/health") && "GET".equals(method)) {
             return new IpLimitConfig("health", 60, RateWindow.MINUTE);
         }
+        if (p.equals("/account/device/register") && "POST".equals(method)) return new IpLimitConfig("device_register",60,RateWindow.HOUR);
+        if (p.startsWith("/invites/validate/") && "GET".equals(method)) return new IpLimitConfig("invite_validate",120,RateWindow.HOUR);
         return null;
     }
 
-    /** X-Forwarded-For first hop if present, else the direct remote address. */
-    private static String clientIp(HttpServletRequest request) {
+    /** Match Rust/.NET: only trust forwarded addresses from configured proxies. */
+    private String clientIp(HttpServletRequest request) {
+        var trusted = TrustedProxies.parse(props.getTrustedProxyCidrs());
+        String remote = request.getRemoteAddr();
+        if (!TrustedProxies.contains(trusted, remote)) return remote;
         String xff = request.getHeader("X-Forwarded-For");
-        if (xff != null && !xff.isBlank()) {
-            return xff.split(",")[0].trim();
+        if (xff == null) return remote;
+        var hops = new java.util.ArrayList<String>();
+        for (String part : xff.split(",")) {
+            String hop = part.trim();
+            // Reject hostnames; forwarding headers must never trigger DNS lookup.
+            if (!hop.matches("[0-9a-fA-F:.]+") || (!hop.contains(":") && !hop.matches("[0-9.]+"))) continue;
+            try { hops.add(java.net.InetAddress.getByName(hop).getHostAddress()); }
+            catch (java.net.UnknownHostException ignored) { }
         }
-        return request.getRemoteAddr();
+        for (int i = hops.size() - 1; i >= 0; i--)
+            if (!TrustedProxies.contains(trusted, hops.get(i))) return hops.get(i);
+        return hops.isEmpty() ? remote : hops.get(0);
     }
 
     @Override

@@ -173,13 +173,10 @@ public sealed class AuthService
             return null;
         }
 
-        // Note: this intentionally does NOT filter on banned_until — ban status is
-        // checked separately (AuthEndpointFilter) so banned users get a distinct
-        // 403 "temporarily suspended" instead of a generic 401 "invalid token",
-        // matching Rust's separate ban_check_middleware (src/http/middleware/ban.rs).
+        // Match the Rust access-token gate, including deleted and suspended users.
         await using var conn = await _db.OpenConnectionAsync(ct);
         await using var cmd = conn.CreateCommand();
-        cmd.CommandText = "SELECT true FROM users WHERE id = $1 AND deleted_at IS NULL";
+        cmd.CommandText = "SELECT true FROM users u LEFT JOIN user_trust_scores uts ON uts.user_id=u.id WHERE u.id=$1 AND u.deleted_at IS NULL AND (uts.banned_until IS NULL OR uts.banned_until<=now())";
         cmd.Parameters.AddWithValue(userId.Value);
         var result = await cmd.ExecuteScalarAsync(ct);
         return result is null ? null : userId;

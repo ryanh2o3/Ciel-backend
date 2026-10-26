@@ -36,6 +36,7 @@ public sealed class PasetoService
             .Audience("ciel")
             .Subject(userId.ToString())
             .IssuedAt(now)
+            .NotBefore(now)
             .Expiration(exp)
             .AddClaim("typ", "access")
             .Encode();
@@ -54,6 +55,7 @@ public sealed class PasetoService
             .Subject(userId.ToString())
             .TokenIdentifier(refreshId.ToString())
             .IssuedAt(now)
+            .NotBefore(now)
             .Expiration(exp)
             .AddClaim("typ", "refresh")
             .Encode();
@@ -114,6 +116,13 @@ public sealed class PasetoService
             }
 
             var payload = result.Paseto.Payload;
+            foreach (var claim in new[] { "iat", "nbf", "exp" })
+            {
+                if (!payload.TryGetValue(claim, out var value) ||
+                    !DateTimeOffset.TryParse(value?.ToString(), System.Globalization.CultureInfo.InvariantCulture,
+                        System.Globalization.DateTimeStyles.None, out var timestamp)) return null;
+                if (claim == "exp" ? timestamp < DateTimeOffset.UtcNow : timestamp > DateTimeOffset.UtcNow) return null;
+            }
             if (!payload.TryGetValue("typ", out var typObj) ||
                 !string.Equals(typObj?.ToString(), expectedTyp, StringComparison.Ordinal))
             {

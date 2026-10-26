@@ -37,7 +37,7 @@ public sealed class CreateUserRequest
 
 public sealed class CreatePostRequest
 {
-    public List<Guid> MediaIds { get; set; } = [];
+    public required List<Guid> MediaIds { get; set; }
     public string? Caption { get; set; }
 }
 
@@ -54,7 +54,7 @@ public sealed class LikeResponse
 public sealed class UploadRequest
 {
     public required string ContentType { get; set; }
-    public long Bytes { get; set; }
+    public required long Bytes { get; set; }
 }
 
 public sealed class ListResponse<T>
