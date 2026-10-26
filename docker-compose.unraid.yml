@@ -24,7 +24,9 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
-    # No host ports — stay on the compose network only.
+    # Published on CIEL_LAN_IP only (never WAN) so k3d/k3s pods can reach it.
+    ports:
+      - "${CIEL_LAN_IP:-127.0.0.1}:5432:5432"
 
   redis:
     image: redis:7-alpine
@@ -37,6 +39,8 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+    ports:
+      - "${CIEL_LAN_IP:-127.0.0.1}:6379:6379"
 
   minio:
     image: minio/minio:latest
@@ -56,6 +60,8 @@ services:
       interval: 10s
       timeout: 5s
       retries: 10
+    ports:
+      - "${CIEL_LAN_IP:-127.0.0.1}:9000:9000"
 
   minio-init:
     image: minio/mc:latest
@@ -76,11 +82,16 @@ services:
     restart: unless-stopped
     volumes:
       - ./docker/elasticmq/elasticmq.conf:/opt/elasticmq.conf:ro
+    environment:
+      # GetQueueUrl returns this host; k3d pods need the LAN IP, not "elasticmq".
+      ELASTICMQ_ADVERTISE_HOST: ${ELASTICMQ_ADVERTISE_HOST:-elasticmq}
     healthcheck:
       test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/127.0.0.1/9324'"]
       interval: 5s
       timeout: 3s
       retries: 15
+    ports:
+      - "${CIEL_LAN_IP:-127.0.0.1}:9324:9324"
 
   migrate:
     image: postgres:16

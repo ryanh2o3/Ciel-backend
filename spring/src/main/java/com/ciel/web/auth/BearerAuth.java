@@ -13,11 +13,11 @@ public final class BearerAuth {
 
     private BearerAuth() {}
 
-    /** Returns the trimmed token, or empty if the header is missing/not a Bearer token. */
+    /** Returns the token, or empty if the header is missing/not a Bearer token. */
     public static Optional<String> extractToken(String authorizationHeader) {
-        if (authorizationHeader == null || !authorizationHeader.regionMatches(true, 0, PREFIX, 0, PREFIX.length())) {
+        if (authorizationHeader == null || !authorizationHeader.startsWith(PREFIX)) {
             return Optional.empty();
         }
-        return Optional.of(authorizationHeader.substring(PREFIX.length()).trim());
+        return Optional.of(authorizationHeader.substring(PREFIX.length()));
     }
 }

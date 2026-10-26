@@ -11,9 +11,9 @@ public static class MediaEndpoints
     public static RouteGroupBuilder MapMediaEndpoints(this RouteGroupBuilder group)
     {
         group.MapPost("/upload", CreateUpload).RequireAuth();
-        group.MapPost("/upload/{id:guid}/complete", CompleteUpload).RequireAuth();
-        group.MapGet("/upload/{id:guid}/status", GetUploadStatus).RequireAuth();
-        group.MapGet("/{id:guid}", GetMedia).RequireAuth();
+        group.MapPost("/upload/{id}/complete", CompleteUpload).RequireAuth();
+        group.MapGet("/upload/{id}/status", GetUploadStatus).RequireAuth();
+        group.MapGet("/{id}", GetMedia).RequireAuth();
         return group;
     }
 

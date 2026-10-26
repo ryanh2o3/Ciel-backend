@@ -15,12 +15,12 @@ public sealed class AuthEndpointFilter : IEndpointFilter
             throw ApiException.Unauthorized("missing Authorization header");
         }
 
-        if (!authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
+        if (!authHeader.StartsWith("Bearer ", StringComparison.Ordinal))
         {
             throw ApiException.Unauthorized("invalid Authorization header");
         }
 
-        var token = authHeader["Bearer ".Length..].Trim();
+        var token = authHeader["Bearer ".Length..];
         var authService = context.HttpContext.RequestServices.GetRequiredService<AuthService>();
         var userId = await authService.AuthenticateAccessTokenAsync(token, context.HttpContext.RequestAborted);
         if (userId is null)
@@ -44,9 +44,9 @@ public sealed class OptionalAuthEndpointFilter : IEndpointFilter
     {
         var authHeader = context.HttpContext.Request.Headers.Authorization.FirstOrDefault();
         if (!string.IsNullOrWhiteSpace(authHeader) &&
-            authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
+            authHeader.StartsWith("Bearer ", StringComparison.Ordinal))
         {
-            var token = authHeader["Bearer ".Length..].Trim();
+            var token = authHeader["Bearer ".Length..];
             var authService = context.HttpContext.RequestServices.GetRequiredService<AuthService>();
             var userId = await authService.AuthenticateAccessTokenAsync(token, context.HttpContext.RequestAborted);
             if (userId is not null)

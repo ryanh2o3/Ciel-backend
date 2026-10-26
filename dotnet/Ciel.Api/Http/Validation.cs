@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using System.Text;
 using Ciel.Api.Http.Errors;
 
 namespace Ciel.Api.Http;
@@ -16,6 +17,9 @@ public static partial class Validation
 
     public static void ValidateHandle(string handle)
     {
+        handle = handle.Trim();
+        if (Encoding.UTF8.GetByteCount(handle) < 3) throw ApiException.BadRequest("handle must be at least 3 characters");
+        if (Encoding.UTF8.GetByteCount(handle) > 30) throw ApiException.BadRequest("handle must be at most 30 characters");
         if (!HandleRegex().IsMatch(handle))
         {
             throw ApiException.BadRequest("handle can only contain letters, numbers, and underscores");
@@ -38,7 +42,7 @@ public static partial class Validation
         }
 
         email = email.Trim();
-        if (email.Length > MaxEmailLen)
+        if (Encoding.UTF8.GetByteCount(email) > MaxEmailLen)
         {
             throw ApiException.BadRequest("email must be at most 254 characters");
         }
@@ -54,22 +58,22 @@ public static partial class Validation
             throw ApiException.BadRequest("display_name cannot be empty");
         }
 
-        if (displayName.Length > MaxDisplayNameLen)
+        if (Encoding.UTF8.GetByteCount(displayName) > MaxDisplayNameLen)
         {
             throw ApiException.BadRequest("display_name must be at most 50 characters");
         }
 
-        if (bio is not null && bio.Length > MaxBioLen)
+        if (bio is not null && Encoding.UTF8.GetByteCount(bio) > MaxBioLen)
         {
             throw ApiException.BadRequest("bio must be at most 500 characters");
         }
 
-        if (password.Trim().Length < 8)
+        if (Encoding.UTF8.GetByteCount(password.Trim()) < 8)
         {
             throw ApiException.BadRequest("password must be at least 8 characters");
         }
 
-        if (password.Length > MaxPasswordLen)
+        if (Encoding.UTF8.GetByteCount(password) > MaxPasswordLen)
         {
             throw ApiException.BadRequest("password must be at most 128 characters");
         }
@@ -84,7 +88,7 @@ public static partial class Validation
             throw ApiException.BadRequest("password must contain at least one lowercase letter");
         }
 
-        if (!password.Any(char.IsDigit))
+        if (!password.Any(c => c >= '0' && c <= '9'))
         {
             throw ApiException.BadRequest("password must contain at least one digit");
         }

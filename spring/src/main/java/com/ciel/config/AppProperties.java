@@ -22,7 +22,7 @@ public class AppProperties {
      * Per-IP signup limit (requests/day) used by {@link com.ciel.web.IpRateLimitFilter}.
      * Matches Rust's {@code IP_SIGNUP_RATE_LIMIT} (see {@code src/config/mod.rs}).
      */
-    private long ipSignupRateLimit = 3;
+    private long ipSignupRateLimit = 10;
 
     /**
      * Comma-separated CIDRs whose peers may set {@code X-Forwarded-For} /

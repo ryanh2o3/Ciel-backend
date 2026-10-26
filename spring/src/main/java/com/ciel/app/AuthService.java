@@ -102,7 +102,7 @@ public class AuthService {
         return issuePair(userId).response();
     }
 
-    @Transactional
+    @Transactional(noRollbackFor = ApiException.class)
     public AuthTokenResponse refresh(String refreshToken) {
         var claims = paseto.verifyRefresh(refreshToken)
                 .orElseThrow(() -> ApiException.unauthorized("invalid refresh token"));
@@ -198,17 +198,18 @@ public class AuthService {
                 "INSERT INTO user_trust_scores (user_id) VALUES (?) ON CONFLICT DO NOTHING",
                 user.getId());
 
-        int consumed = jdbc.update(
-                """
-                UPDATE invite_codes
-                SET use_count = use_count + 1
-                WHERE code = ? AND is_valid
-                  AND (expires_at IS NULL OR expires_at > now())
-                  AND use_count < max_uses
-                """,
-                inviteCode);
-        if (consumed == 0) {
-            throw ApiException.badRequest("invalid invite code");
+        var invite = jdbc.queryForRowSet("SELECT created_by,is_valid,expires_at,use_count,max_uses FROM invite_codes WHERE code=? FOR UPDATE",inviteCode);
+        if (!invite.next()) throw ApiException.badRequest("Invalid invite code");
+        if (!invite.getBoolean("is_valid")) throw ApiException.badRequest("Invite code has been revoked");
+        if (invite.getTimestamp("expires_at").toInstant().isBefore(Instant.now())) throw ApiException.badRequest("Invite code has expired");
+        int used = invite.getInt("use_count");
+        if (used >= invite.getInt("max_uses")) throw ApiException.badRequest("Invite code has been fully used");
+        jdbc.update("UPDATE invite_codes SET used_by=?,used_at=now(),use_count=use_count+1,is_valid=? WHERE code=?",
+                user.getId(),used+1<invite.getInt("max_uses"),inviteCode);
+        UUID inviter=(UUID)invite.getObject("created_by");
+        if (inviter != null) {
+            jdbc.update("INSERT INTO invite_relationships(inviter_id,invitee_id,invite_code) VALUES(?,?,?)",inviter,user.getId(),inviteCode);
+            jdbc.update("UPDATE user_trust_scores SET successful_invites=successful_invites+1,trust_points=trust_points+10 WHERE user_id=?",inviter);
         }
         return user;
     }

@@ -35,7 +35,7 @@ public final class RequestValidation {
 
     /** Matches Rust's {@code validate_max_len}. */
     public static void validateMaxLen(String field, String value, int maxLen) {
-        if (value != null && value.length() > maxLen) {
+        if (value != null && value.getBytes(java.nio.charset.StandardCharsets.UTF_8).length > maxLen) {
             throw ApiException.badRequest(field + " must be at most " + maxLen + " characters");
         }
     }
@@ -43,10 +43,10 @@ public final class RequestValidation {
     /** Matches Rust's {@code validate_handle} exactly, including error message strings. */
     public static void validateHandle(String handle) {
         String trimmed = handle == null ? "" : handle.trim();
-        if (trimmed.length() < MIN_HANDLE_LEN) {
+        if (trimmed.getBytes(java.nio.charset.StandardCharsets.UTF_8).length < MIN_HANDLE_LEN) {
             throw ApiException.badRequest("handle must be at least 3 characters");
         }
-        if (trimmed.length() > MAX_HANDLE_LEN) {
+        if (trimmed.getBytes(java.nio.charset.StandardCharsets.UTF_8).length > MAX_HANDLE_LEN) {
             throw ApiException.badRequest("handle must be at most 30 characters");
         }
         for (int i = 0; i < trimmed.length(); i++) {

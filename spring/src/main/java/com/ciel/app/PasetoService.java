@@ -80,9 +80,13 @@ public class PasetoService {
                 return Optional.empty();
             }
             Instant exp = Instant.parse(node.get("exp").asText());
-            if (Instant.now().isAfter(exp)) {
+            Instant now = Instant.now();
+            if (!now.isBefore(exp) || Instant.parse(node.get("iat").asText()).isAfter(now)
+                    || Instant.parse(node.get("nbf").asText()).isAfter(now)) {
                 return Optional.empty();
             }
+            UUID.fromString(node.get("sub").asText());
+            if ("refresh".equals(expectedTyp)) UUID.fromString(node.get("jti").asText());
             return Optional.of(node);
         } catch (Exception e) {
             return Optional.empty();
@@ -96,6 +100,7 @@ public class PasetoService {
             n.put("aud", "ciel");
             n.put("sub", userId.toString());
             n.put("iat", iat.toString());
+            n.put("nbf", iat.toString());
             n.put("exp", exp.toString());
             n.put("typ", typ);
             if (jti != null) {

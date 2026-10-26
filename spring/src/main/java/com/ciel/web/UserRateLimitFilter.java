@@ -59,7 +59,7 @@ public class UserRateLimitFilter extends OncePerRequestFilter {
         if (p.startsWith("/posts/") && p.endsWith("/comment") && "POST".equals(method)) {
             return "comment";
         }
-        if (p.equals("/feed") && "GET".equals(method)) {
+        if ((p.equals("/feed") || p.equals("/feed/stories")) && "GET".equals(method)) {
             return "feed";
         }
         if (p.equals("/feed/refresh") && "POST".equals(method)) {
@@ -71,6 +71,13 @@ public class UserRateLimitFilter extends OncePerRequestFilter {
         if (p.startsWith("/media") && ("POST".equals(method) || "DELETE".equals(method))) {
             return "media_upload";
         }
+        if ("POST".equals(method) && p.contains("/unfollow")) return "unfollow";
+        if ("POST".equals(method) && p.contains("/follow")) return "follow";
+        if ("POST".equals(method) && p.equals("/stories")) return "post";
+        if ("POST".equals(method) && p.startsWith("/stories/") && (p.endsWith("/seen") || p.endsWith("/reactions"))) return "like";
+        if (p.startsWith("/notifications")) return "notifications";
+        if (p.startsWith("/search/")) return "search";
+        if (p.startsWith("/moderation/")) return "moderation";
         return null;
     }
 

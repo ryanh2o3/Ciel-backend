@@ -59,22 +59,32 @@ Keep Compose for Postgres / Redis / MinIO / ElasticMQ / cloudflared. Put k3d and
 
 Push to `main` (or **Actions → Run workflow**) so Spring/.NET images exist, then:
 
-```bash
-cp k8s/01-secret.example.yaml /tmp/ciel-secrets.yaml
-# edit secrets to match Unraid .env (same PASETO keys)
+`kubectl` is not on the Unraid host — run it inside the k3d server container (adjust the container name if yours differs; find it with `docker ps | grep k3s-server`):
 
-kubectl apply -f k8s/00-namespace-data-plane.yaml
-kubectl apply -f /tmp/ciel-secrets.yaml
-kubectl apply -f k8s/10-rust.yaml
-kubectl apply -f k8s/20-spring.yaml
-kubectl apply -f k8s/30-dotnet.yaml
-kubectl apply -f k8s/40-traefik-ingress.yaml
+```bash
+cp k8s/01-secret.example.yaml /mnt/user/ciel/ciel-secrets.yaml
+# edit /mnt/user/ciel/ciel-secrets.yaml to match Unraid .env (same PASETO keys,
+# data-plane URLs reachable from pods), then apply in order:
+
+cd /mnt/user/ciel/Ciel-backend
+for f in k8s/00-namespace-data-plane.yaml /mnt/user/ciel/ciel-secrets.yaml \
+         k8s/10-rust.yaml k8s/20-spring.yaml k8s/30-dotnet.yaml k8s/40-traefik-ingress.yaml; do
+  docker exec -i k3d-unraid-k3s-server-0 kubectl apply -f - < "$f"
+done
 ```
 
 Update after a new `:main` publish:
 
 ```bash
-kubectl -n ciel rollout restart deploy/ciel-api-rust deploy/ciel-api-spring deploy/ciel-api-dotnet deploy/ciel-worker-rust
+docker exec -i k3d-unraid-k3s-server-0 kubectl -n ciel rollout restart \
+  deploy/ciel-api-rust deploy/ciel-api-spring deploy/ciel-api-dotnet deploy/ciel-worker-rust
+```
+
+Verify pods are Ready before trusting the weighted pool (Traefik sends traffic to Services with 0 Ready endpoints):
+
+```bash
+docker exec -i k3d-unraid-k3s-server-0 kubectl -n ciel get pods -o wide
+docker exec -i k3d-unraid-k3s-server-0 kubectl -n ciel logs deploy/ciel-api-dotnet --tail=20
 ```
 
 ## 5. Cloudflare
