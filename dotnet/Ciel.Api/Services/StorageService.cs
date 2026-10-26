@@ -31,9 +31,9 @@ public sealed class StorageService : IDisposable
 
     private static AWSCredentials ResolveCredentials(AppConfig config)
     {
-        if (!string.IsNullOrEmpty(config.SqsAccessKey))
+        if (!string.IsNullOrEmpty(config.S3AccessKey))
         {
-            return new BasicAWSCredentials(config.SqsAccessKey, config.SqsSecretKey);
+            return new BasicAWSCredentials(config.S3AccessKey, config.S3SecretKey);
         }
 
         return FallbackCredentialsFactory.GetCredentials();

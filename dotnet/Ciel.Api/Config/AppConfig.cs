@@ -18,6 +18,8 @@ public sealed class AppConfig
     public required string S3Region { get; init; }
     public required string S3Bucket { get; init; }
     public bool S3ForcePathStyle { get; init; }
+    public string S3AccessKey { get; init; } = string.Empty;
+    public string S3SecretKey { get; init; } = string.Empty;
 
     public required string QueueEndpoint { get; init; }
     public required string QueueRegion { get; init; }
@@ -72,6 +74,8 @@ public sealed class AppConfig
             S3Region = s3Region,
             S3Bucket = EnvOrThrow("S3_BUCKET"),
             S3ForcePathStyle = string.Equals(EnvOr("S3_FORCE_PATH_STYLE", "false"), "true", StringComparison.OrdinalIgnoreCase),
+            S3AccessKey = EnvOr("S3_ACCESS_KEY", EnvOr("AWS_ACCESS_KEY_ID", string.Empty)),
+            S3SecretKey = EnvOr("S3_SECRET_KEY", EnvOr("AWS_SECRET_ACCESS_KEY", string.Empty)),
 
             QueueEndpoint = EnvOrThrow("QUEUE_ENDPOINT"),
             QueueRegion = queueRegion,
